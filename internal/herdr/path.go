@@ -35,7 +35,7 @@ func configuredWorktreesDir() string {
 	if err != nil {
 		return defaultWorktreesDir
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if v, ok := scanWorktreesDirective(f); ok {
 		return v

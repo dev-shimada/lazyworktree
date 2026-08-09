@@ -1,88 +1,105 @@
 # lazyworktree
 
-git worktree を操作するための TUI ツール。Go + [Bubble Tea](https://github.com/charmbracelet/bubbletea) 製。
+A TUI for managing git worktrees. Built with Go and [Bubble Tea](https://github.com/charmbracelet/bubbletea).
 
-## ビルド
+[日本語](README.ja.md)
+
+## Features
+
+- Browse, create, delete, lock/unlock, and prune git worktrees from a terminal UI
+- Read-only GitHub Issues / Pull Requests tabs (via the `gh` CLI)
+- Check out an issue or PR straight into a new worktree
+- Optional integration with [herdr](https://github.com/herdrdev/herdr): hand a worktree off to a herdr pane, list worktrees by their live herdr workspace label, and create new worktrees under herdr's configured directory when launched from inside herdr
+
+## Install
+
+### Homebrew
 
 ```sh
-go build -o lazyworktree .
+brew tap dev-shimada/lazyworktree
+brew install lazyworktree
 ```
 
-## 使い方
+### Go
 
-git リポジトリ内（どの worktree でも可）で実行する。
+```sh
+go install github.com/dev-shimada/lazyworktree@latest
+```
+
+## Usage
+
+Run it inside a git repository (any worktree):
 
 ```sh
 lazyworktree
 ```
 
-画面は Worktrees / Issues / Pull Requests の3タブ。`tab` で切り替える。
+The screen has three tabs — Worktrees / Issues / Pull Requests — switched with `tab`.
 
-| キー | 動作 | タブ |
+| Key | Action | Tab |
 | --- | --- | --- |
-| `↑`/`k`, `↓`/`j` | 選択移動 | 共通 |
-| `tab` | Worktrees / Issues / Pull Requests を切り替え | 共通 |
-| `r` | 現在のタブを再読み込み | 共通 |
-| `/` | 一覧をフィルタ | 共通 |
-| `q` / `ctrl+c` | 終了（何も選択しない） | 共通 |
-| `enter` | worktree を選択して終了（パスを stdout に出力） | Worktrees |
-| `n` | 新規 worktree を作成（既存/新規ブランチどちらも指定可） | Worktrees |
-| `d` | 選択中の worktree を削除（確認あり、`f` で `--force` 切替） | Worktrees |
-| `l` | 選択中の worktree の lock / unlock を切り替え | Worktrees |
-| `p` | `git worktree prune` を実行 | Worktrees |
-| `o` | 選択中の worktree を herdr のペインとして開く（既に開いていれば focus） | Worktrees |
-| `R` | rename（挙動は起動モードによる。下記参照） | Worktrees |
-| `enter` / `o` | 選択中の issue / PR をブラウザで開く（`gh ... --web`） | Issues / Pull Requests |
-| `n` | 選択中の issue / PR を新規 worktree としてチェックアウト | Issues / Pull Requests |
+| `↑`/`k`, `↓`/`j` | Move selection | all |
+| `tab` | Switch Worktrees / Issues / Pull Requests | all |
+| `r` | Reload the current tab | all |
+| `/` | Filter the list | all |
+| `q` / `ctrl+c` | Quit without selecting | all |
+| `enter` | Select a worktree and exit (prints its path to stdout) | Worktrees |
+| `n` | Create a new worktree (existing or new branch) | Worktrees |
+| `d` | Delete the selected worktree (asks first; `f` toggles `--force`) | Worktrees |
+| `l` | Toggle lock / unlock on the selected worktree | Worktrees |
+| `p` | Run `git worktree prune` | Worktrees |
+| `o` | Open the selected worktree as a herdr pane (focuses it if already open) | Worktrees |
+| `R` | Rename (behavior depends on how lazyworktree was launched — see below) | Worktrees |
+| `enter` / `o` | Open the selected issue / PR in the browser (`gh ... --web`) | Issues / Pull Requests |
+| `n` | Check out the selected issue / PR into a new worktree | Issues / Pull Requests |
 
-Issues / Pull Requests タブの閲覧自体は `gh` CLI（既存の `gh auth login` 認証）を使った読み取り専用（GitHub 側に書き込みは一切しない）。`n` で worktree を作る操作だけはローカルに `git fetch` / `git worktree add` を行う（後述）。オープン中の worktree のブランチが、取得した PR の head ブランチと一致する場合、Worktrees タブ側に `[PR #123]` バッジが付く。
+Browsing the Issues / Pull Requests tabs is read-only, backed by the `gh` CLI (using your existing `gh auth login`) — nothing is ever written back to GitHub. The `n` action (below) does touch your local checkout: it runs `git fetch` / `git worktree add`. When an open PR's head branch matches a worktree's branch, that worktree gets a `[PR #123]` badge.
 
-### issue / PR から worktree を作る（`n`）
+### Creating a worktree from an issue / PR (`n`)
 
-- **Pull Requests タブ**: ブランチ名は `pr-<番号>` 固定。`refs/pull/<番号>/head:pr-<番号>` を直接 fetch してから worktree を作るので、fork から出された PR でも動く。同名ブランチの worktree が既にあればそれをそのまま使う（再 fetch はしない）。
-- **Issues タブ**: ブランチ名は `issue-<番号>` 固定。リポジトリのデフォルトブランチを fetch し、そこから新規ブランチを切って worktree を作る。
-- どちらも作成後、`herdr` が使えれば自動でそのペインを開く（既に開いていれば focus）。
+- **Pull Requests tab**: the branch is always named `pr-<number>`. It fetches `refs/pull/<number>/head:pr-<number>` directly, so this works for PRs from forks too. If a worktree for that branch already exists, it's reused (no re-fetch).
+- **Issues tab**: the branch is always named `issue-<number>`. It fetches the repository's default branch and creates the new branch from there.
+- Either way, if `herdr` is available, the new worktree is opened as a pane afterward (or focused, if already open).
 
-### 新規 worktree の作成先
+### Where new worktrees are created
 
-`n` で作成する際のデフォルトパスは、起動モードによって変わる（パスはどちらもフォームで編集可能）。
+The default path used by `n` depends on how lazyworktree was launched (either path is editable in the form before creating):
 
-- **通常起動時**: リポジトリ直下の `.worktrees/<ブランチ名>`（ブランチ名の `/` はそのままネストしたディレクトリになる）。対象リポジトリの `.gitignore` に `.worktrees/` を追加しておくことを推奨する。
-- **herdr のペイン内で起動時**: herdr 自身が使う場所と同じ `<herdr の worktrees.directory 設定>/<リポジトリ名>/<ブランチ名>`（デフォルトは `~/.herdr/worktrees/<repo>/<branch>`）。`~/.config/herdr/config.toml` の `[worktrees] directory` を変更していればそれに従う（herdr の CLI に設定値を問い合わせる手段が無いため、config.toml をこちらで直接読んで反映している）。
+- **Standalone**: `.worktrees/<branch>` under the repository root (a branch containing `/` becomes nested directories). Add `.worktrees/` to the target repo's `.gitignore`.
+- **Launched from inside a herdr pane**: the same location herdr itself would use — `<herdr's worktrees.directory>/<repo>/<branch>` (default `~/.herdr/worktrees/<repo>/<branch>`). If `[worktrees] directory` is customized in `~/.config/herdr/config.toml`, that's honored (lazyworktree reads the file directly, since herdr's CLI has no way to query the resolved setting).
 
-Issues / Pull Requests タブの `n`（worktree 作成）でも同じ使い分けをする。
+The `n` action on the Issues / Pull Requests tabs follows the same rule.
 
-### シェル連携（cd フック）
+### Shell integration (cd hook)
 
-`enter` で worktree を選択すると、終了後にそのパスを標準出力に 1 行だけ出力する。
-シェル関数でラップすると `cd` 込みで使える。
+Selecting a worktree with `enter` prints its path to stdout as a single line on exit. Wrap it in a shell function to also `cd`:
 
 ```sh
-# ~/.zshrc など
+# e.g. in ~/.zshrc
 lazyworktree() {
   local dir
   dir=$(command lazyworktree) && [ -n "$dir" ] && cd -- "$dir"
 }
 ```
 
-## herdr 連携
+## herdr integration
 
-`internal/herdr` が `herdr worktree open` / `herdr worktree list` / `herdr worktree remove` / `herdr workspace rename` / `herdr workspace focus` を薄くラップしている（`herdr` が PATH 上にない場合は機能を無効化するだけで、エラーにはしない）。
+`internal/herdr` thinly wraps `herdr worktree open` / `herdr worktree list` / `herdr worktree remove` / `herdr workspace rename` / `herdr workspace focus`. If `herdr` isn't on PATH, these features just quietly disable themselves — nothing errors.
 
-- Worktrees タブで `o` を押すと、選択中の worktree を herdr のペインとして開く。`herdr worktree list` で既に開いているワークスペースがあれば `herdr worktree open` を呼ばず `herdr workspace focus` で切り替えるだけにする（`hwtopen` 相当）。
-- `d` で削除する際、その worktree に開いている herdr ワークスペースがあれば `herdr worktree remove --workspace` でペインごと閉じてから削除する。開いていなければ通常の `git worktree remove` にフォールバックする（`hwtremove` 相当）。開いたままのペインが削除済みディレクトリを指し続ける事故を防ぐため。
-- 新規作成フォーム（`n`）に「open in herdr after create」のトグルがあり（`herdr` が見つかっていればデフォルト ON）、作成後にそのまま herdr のペインとして開ける。
-- Issues / Pull Requests タブの `n`（上記）でも同様に、作成後 herdr が使えれば自動でペインを開く。
-- **herdr のペイン内で起動時**、Worktrees タブの一覧はブランチ名の代わりに、その worktree に開いている herdr ワークスペースの現在のラベル（`R` でリネームした名前を含む）を表示する（`herdr worktree list` の `label` フィールドはリネームを反映しない静的な値なので、`herdr workspace list` を別途引いて解決している）。ブランチ名は一覧の説明行に `[branch]` として残る。開いているワークスペースが無い worktree は従来通りブランチ名で表示される。
+- `o` on the Worktrees tab opens the selected worktree as a herdr pane. If `herdr worktree list` shows it already has an open workspace, it calls `herdr workspace focus` instead of opening it again.
+- On delete (`d`), if the worktree has an open herdr workspace, `herdr worktree remove --workspace` closes the pane and removes the checkout in one step; otherwise it falls back to a plain `git worktree remove`. This avoids leaving a pane pointed at a deleted directory.
+- The create form (`n`) has an "open in herdr after create" toggle (on by default when `herdr` is found), so a fresh worktree opens straight into a pane.
+- The `n` action on the Issues / Pull Requests tabs does the same after checking out.
+- **When launched from inside a herdr pane**, the Worktrees tab shows each worktree's live herdr workspace label instead of its branch name (`herdr worktree list`'s own `label` field is a static default that doesn't track renames, so this cross-references `herdr workspace list` instead). The branch name stays visible as `[branch]` in the description line. Worktrees with no open workspace still show their branch name as usual.
 
-### rename の挙動
+### Rename behavior
 
-`R` の挙動は、`lazyworktree` が herdr のペイン内で起動されているか（`HERDR_ENV=1` 環境変数の有無で判定）によって変わる。どちらの場合も worktree のチェックアウトディレクトリ自体は変更しない。
+`R` behaves differently depending on whether lazyworktree is running inside a herdr pane (detected via the `HERDR_ENV=1` environment variable). Neither mode ever touches the worktree's checkout directory.
 
-- **通常起動時**: 選択中の worktree のブランチ名を `git branch -m` でリネームする。
-- **herdr のペイン内で起動時**（popup 経由など）: 選択中の worktree に関係なく、そのペインをホストしている herdr workspace のラベルをリネームする。ブランチ名は変更しない。ホストしている workspace の ID は `$HERDR_WORKSPACE_ID` 環境変数がまず使われるが、popup コマンドのシェルにはこれが渡らないことがあるため、その場合は `herdr workspace list` で現在フォーカスされているワークスペースを探すフォールバックが入っている。
+- **Standalone**: renames the selected worktree's branch with `git branch -m`.
+- **Inside a herdr pane** (e.g. launched as a popup): renames the label of the herdr workspace hosting the pane — regardless of which worktree is selected. The branch name is left untouched. The workspace ID is normally read from `$HERDR_WORKSPACE_ID`, but popup commands don't always get that env var, so this falls back to asking `herdr workspace list` for the currently focused workspace.
 
-`lazyworktree` 自体を herdr の popup として呼び出す設定は `~/.config/herdr/config.toml` に追加済み:
+Calling lazyworktree as a herdr popup, e.g. in `~/.config/herdr/config.toml`:
 
 ```toml
 [[keys.command]]
@@ -94,13 +111,17 @@ width = "80%"
 height = "70%"
 ```
 
-## GitHub 連携
+## GitHub integration
 
-`internal/github` が `gh` CLI（既存の `gh auth login` 認証をそのまま利用）をラップし、Issues / Pull Requests タブに閲覧専用の一覧を表示する。作成・コメント・マージなどの書き込み操作は対象外。`gh` が PATH 上にない場合はタブ選択時にエラーメッセージを表示するだけで、他の機能には影響しない。
+`internal/github` wraps the `gh` CLI (reusing your existing `gh auth login`) to show a read-only Issues / Pull Requests list. Writing back to GitHub — creating, commenting, merging — is out of scope. If `gh` isn't on PATH, selecting either tab just shows an error; nothing else is affected.
 
-## 開発
+## Development
 
 ```sh
 go vet ./...
 go test ./...
 ```
+
+## License
+
+[MIT](LICENSE)
