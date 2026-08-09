@@ -28,6 +28,25 @@ func Path() (string, error) {
 	return filepath.Join(home, ".config", "lazyworktree", "config.toml"), nil
 }
 
+// ExampleConfig is a starter ~/.config/lazyworktree/config.toml, printed by
+// `lazyworktree --default-config`. Every setting is commented out so the
+// output can be redirected straight into the config file without
+// accidentally enabling anything.
+const ExampleConfig = `# lazyworktree configuration
+# Place this file at ~/.config/lazyworktree/config.toml
+
+# Track issues in a separate repository (e.g. a shared spec/backlog repo
+# used by several app repos). match is a glob against the current repo's
+# "owner/repo" ("*" doesn't cross "/", so "myorg/*" matches any repo
+# directly under myorg but nothing nested further). The first matching
+# rule's repos become additional Issues-tab sources on top of the current
+# repo's own issues, which stay available regardless. Press 's' on the
+# Issues tab to cycle through them.
+# [[issues_repo]]
+# match = "myorg/*"
+# repos = ["myorg/specs"]
+`
+
 // IssuesRepos returns the additional issues repos ("owner/repo") configured
 // for currentRepo (also "owner/repo"), from the first matching
 // [[issues_repo]] rule (rules are checked in file order). The current repo's

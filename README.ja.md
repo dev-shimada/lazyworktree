@@ -73,7 +73,12 @@ Issues / Pull Requests タブの `n`（worktree 作成）でも同じ使い分�
 
 ### issue を別リポジトリで管理している場合
 
-コードとは別のリポジトリで issue を管理しているプロジェクト向け（複数のアプリリポジトリで1つの spec/backlog リポジトリを共有している場合など）に、`~/.config/lazyworktree/config.toml` で設定できる:
+コードとは別のリポジトリで issue を管理しているプロジェクト向け（複数のアプリリポジトリで1つの spec/backlog リポジトリを共有している場合など）に、`~/.config/lazyworktree/config.toml` で設定できる。`lazyworktree --default-config` でコメントアウト済みの雛形が出力される:
+
+```sh
+mkdir -p ~/.config/lazyworktree
+lazyworktree --default-config > ~/.config/lazyworktree/config.toml
+```
 
 ```toml
 [[issues_repo]]

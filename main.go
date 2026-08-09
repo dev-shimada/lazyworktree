@@ -7,6 +7,9 @@
 //		local dir
 //		dir=$(command lazyworktree) && [ -n "$dir" ] && cd -- "$dir"
 //	}
+//
+// `lazyworktree --default-config` prints a starter
+// ~/.config/lazyworktree/config.toml, with every setting commented out.
 package main
 
 import (
@@ -14,10 +17,16 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dev-shimada/lazyworktree/internal/config"
 	"github.com/dev-shimada/lazyworktree/internal/tui"
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--default-config" {
+		fmt.Print(config.ExampleConfig)
+		return
+	}
+
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "lazyworktree:", err)
 		os.Exit(1)

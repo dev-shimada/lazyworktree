@@ -73,7 +73,12 @@ The `n` action on the Issues / Pull Requests tabs follows the same rule.
 
 ### Tracking issues in a different repository
 
-Some projects track issues in a separate repo from the code (e.g. a shared spec/backlog repo used by several app repos). Configure this in `~/.config/lazyworktree/config.toml`:
+Some projects track issues in a separate repo from the code (e.g. a shared spec/backlog repo used by several app repos). Configure this in `~/.config/lazyworktree/config.toml` — `lazyworktree --default-config` prints a commented-out starter file:
+
+```sh
+mkdir -p ~/.config/lazyworktree
+lazyworktree --default-config > ~/.config/lazyworktree/config.toml
+```
 
 ```toml
 [[issues_repo]]
