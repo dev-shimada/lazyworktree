@@ -45,9 +45,12 @@ Issues / Pull Requests タブの閲覧自体は `gh` CLI（既存の `gh auth lo
 
 ### 新規 worktree の作成先
 
-`n` で作成する際のデフォルトパスは、リポジトリ直下の `.worktrees/<ブランチ名>`（ブランチ名の `/` はそのままネストしたディレクトリになる）。パスはフォームで編集可能。
+`n` で作成する際のデフォルトパスは、起動モードによって変わる（パスはどちらもフォームで編集可能）。
 
-対象リポジトリの `.gitignore` に `.worktrees/` を追加しておくことを推奨する。
+- **通常起動時**: リポジトリ直下の `.worktrees/<ブランチ名>`（ブランチ名の `/` はそのままネストしたディレクトリになる）。対象リポジトリの `.gitignore` に `.worktrees/` を追加しておくことを推奨する。
+- **herdr のペイン内で起動時**: herdr 自身が使う場所と同じ `<herdr の worktrees.directory 設定>/<リポジトリ名>/<ブランチ名>`（デフォルトは `~/.herdr/worktrees/<repo>/<branch>`）。`~/.config/herdr/config.toml` の `[worktrees] directory` を変更していればそれに従う（herdr の CLI に設定値を問い合わせる手段が無いため、config.toml をこちらで直接読んで反映している）。
+
+Issues / Pull Requests タブの `n`（worktree 作成）でも同じ使い分けをする。
 
 ### シェル連携（cd フック）
 
@@ -70,6 +73,7 @@ lazyworktree() {
 - `d` で削除する際、その worktree に開いている herdr ワークスペースがあれば `herdr worktree remove --workspace` でペインごと閉じてから削除する。開いていなければ通常の `git worktree remove` にフォールバックする（`hwtremove` 相当）。開いたままのペインが削除済みディレクトリを指し続ける事故を防ぐため。
 - 新規作成フォーム（`n`）に「open in herdr after create」のトグルがあり（`herdr` が見つかっていればデフォルト ON）、作成後にそのまま herdr のペインとして開ける。
 - Issues / Pull Requests タブの `n`（上記）でも同様に、作成後 herdr が使えれば自動でペインを開く。
+- **herdr のペイン内で起動時**、Worktrees タブの一覧はブランチ名の代わりに、その worktree に開いている herdr ワークスペースの現在のラベル（`R` でリネームした名前を含む）を表示する（`herdr worktree list` の `label` フィールドはリネームを反映しない静的な値なので、`herdr workspace list` を別途引いて解決している）。ブランチ名は一覧の説明行に `[branch]` として残る。開いているワークスペースが無い worktree は従来通りブランチ名で表示される。
 
 ### rename の挙動
 

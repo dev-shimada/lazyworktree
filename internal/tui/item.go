@@ -8,19 +8,23 @@ import (
 )
 
 type worktreeItem struct {
-	wt git.Worktree
-	pr *github.PullRequest // matching open PR for wt.Branch, if any
+	wt         git.Worktree
+	pr         *github.PullRequest // matching open PR for wt.Branch, if any
+	herdrLabel string              // live herdr workspace label, when one is open for wt.Path
 }
 
 func (i worktreeItem) Title() string {
-	branch := i.wt.Branch
+	name := i.wt.Branch
 	switch {
 	case i.wt.Bare:
-		branch = "(bare)"
+		name = "(bare)"
 	case i.wt.Detached:
-		branch = "(detached)"
+		name = "(detached)"
 	}
-	title := branchStyle.Render(branch)
+	if i.herdrLabel != "" {
+		name = i.herdrLabel
+	}
+	title := branchStyle.Render(name)
 	if i.wt.Locked {
 		title += " " + lockedBadgeStyle.Render("[locked]")
 	}
@@ -41,6 +45,9 @@ func (i worktreeItem) Description() string {
 	head := i.wt.Head
 	if len(head) > 8 {
 		head = head[:8]
+	}
+	if i.herdrLabel != "" {
+		return fmt.Sprintf("%s  %s  [%s]", i.wt.Path, head, i.wt.Branch)
 	}
 	return fmt.Sprintf("%s  %s", i.wt.Path, head)
 }

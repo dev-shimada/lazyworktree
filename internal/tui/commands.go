@@ -21,6 +21,10 @@ type prsLoadedMsg struct {
 	prs []github.PullRequest
 }
 
+type herdrLabelsLoadedMsg struct {
+	labelByPath map[string]string
+}
+
 type errMsg struct {
 	err error
 }
@@ -37,6 +41,33 @@ func loadWorktreesCmd(repoDir string) tea.Cmd {
 			return errMsg{err}
 		}
 		return worktreesLoadedMsg{worktrees: wts}
+	}
+}
+
+// loadHerdrLabelsCmd resolves each worktree's live herdr workspace label
+// (keyed by checkout path), for worktrees that currently have one open.
+// Errors are swallowed to an empty map: label display is a nice-to-have and
+// shouldn't block the worktree list itself.
+func loadHerdrLabelsCmd(repoRoot string) tea.Cmd {
+	return func() tea.Msg {
+		labelByPath := map[string]string{}
+		worktrees, err := herdr.ListWorktrees(repoRoot)
+		if err != nil {
+			return herdrLabelsLoadedMsg{labelByPath: labelByPath}
+		}
+		labelsByID, err := herdr.WorkspaceLabels()
+		if err != nil {
+			return herdrLabelsLoadedMsg{labelByPath: labelByPath}
+		}
+		for _, w := range worktrees {
+			if w.OpenWorkspaceID == "" {
+				continue
+			}
+			if label, ok := labelsByID[w.OpenWorkspaceID]; ok && label != "" {
+				labelByPath[w.Path] = label
+			}
+		}
+		return herdrLabelsLoadedMsg{labelByPath: labelByPath}
 	}
 }
 
@@ -211,16 +242,26 @@ func existingWorktreePath(worktrees []git.Worktree, branch string) (string, bool
 	return "", false
 }
 
+// defaultWorktreePath picks herdr's configured worktree location when
+// herdrMode is set (running as a herdr popup), otherwise lazyworktree's own
+// repo-relative convention.
+func defaultWorktreePath(herdrMode bool, repoRoot, branch string) string {
+	if herdrMode {
+		return herdr.DefaultWorktreePath(repoRoot, branch)
+	}
+	return git.DefaultWorktreePath(repoRoot, branch)
+}
+
 // checkoutPRWorktreeCmd checks out a pull request's head commit into a new
 // worktree (branch "pr-<number>"), fetching it directly via its PR ref so it
 // works for PRs from forks. If a worktree for that branch already exists, the
 // fetch/checkout is skipped and the existing one is reused.
-func checkoutPRWorktreeCmd(repoRoot string, worktrees []git.Worktree, pr github.PullRequest, openHerdr bool) tea.Cmd {
+func checkoutPRWorktreeCmd(repoRoot string, worktrees []git.Worktree, pr github.PullRequest, herdrMode, openHerdr bool) tea.Cmd {
 	return func() tea.Msg {
 		branch := fmt.Sprintf("pr-%d", pr.Number)
 		path, exists := existingWorktreePath(worktrees, branch)
 		if !exists {
-			path = git.DefaultWorktreePath(repoRoot, branch)
+			path = defaultWorktreePath(herdrMode, repoRoot, branch)
 			if err := git.FetchPRRef(repoRoot, pr.Number, branch); err != nil {
 				return actionDoneMsg{err: err}
 			}
@@ -245,12 +286,12 @@ func checkoutPRWorktreeCmd(repoRoot string, worktrees []git.Worktree, pr github.
 // repository's default branch and checks it out into a new worktree. If a
 // worktree for that branch already exists, this is skipped and the existing
 // one is reused.
-func checkoutIssueWorktreeCmd(repoRoot string, worktrees []git.Worktree, issue github.Issue, openHerdr bool) tea.Cmd {
+func checkoutIssueWorktreeCmd(repoRoot string, worktrees []git.Worktree, issue github.Issue, herdrMode, openHerdr bool) tea.Cmd {
 	return func() tea.Msg {
 		branch := fmt.Sprintf("issue-%d", issue.Number)
 		path, exists := existingWorktreePath(worktrees, branch)
 		if !exists {
-			path = git.DefaultWorktreePath(repoRoot, branch)
+			path = defaultWorktreePath(herdrMode, repoRoot, branch)
 			base, err := github.DefaultBranch(repoRoot)
 			if err != nil {
 				return actionDoneMsg{err: fmt.Errorf("resolving default branch: %w", err)}

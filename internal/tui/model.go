@@ -47,6 +47,7 @@ type Model struct {
 
 	worktrees    []git.Worktree
 	prs          []github.PullRequest
+	herdrLabels  map[string]string // worktree path -> live herdr workspace label
 	issuesLoaded bool
 	prsLoaded    bool
 
@@ -97,6 +98,15 @@ func New(dir string) (Model, error) {
 }
 
 func (m Model) Init() tea.Cmd {
+	return m.reloadWorktreesCmd()
+}
+
+// reloadWorktreesCmd reloads the worktree list, and in herdr mode also
+// re-resolves each worktree's live herdr workspace label.
+func (m Model) reloadWorktreesCmd() tea.Cmd {
+	if m.herdrMode {
+		return tea.Batch(loadWorktreesCmd(m.repoRoot), loadHerdrLabelsCmd(m.repoRoot))
+	}
 	return loadWorktreesCmd(m.repoRoot)
 }
 
@@ -111,6 +121,9 @@ func (m *Model) rebuildWorktreeItems() {
 		if pr, ok := prByBranch[w.Branch]; ok {
 			p := pr
 			item.pr = &p
+		}
+		if label, ok := m.herdrLabels[w.Path]; ok {
+			item.herdrLabel = label
 		}
 		items[i] = item
 	}
@@ -140,6 +153,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case worktreesLoadedMsg:
 		m.worktrees = msg.worktrees
+		m.rebuildWorktreeItems()
+		return m, nil
+
+	case herdrLabelsLoadedMsg:
+		m.herdrLabels = msg.labelByPath
 		m.rebuildWorktreeItems()
 		return m, nil
 
@@ -178,7 +196,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = msg.status
 			m.statusErr = false
 		}
-		return m, loadWorktreesCmd(m.repoRoot)
+		return m, m.reloadWorktreesCmd()
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -239,7 +257,7 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case tabPRs:
 			return m, loadPRsCmd(m.repoRoot)
 		default:
-			return m, loadWorktreesCmd(m.repoRoot)
+			return m, m.reloadWorktreesCmd()
 		}
 	}
 
@@ -252,7 +270,7 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleWorktreeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, listKeys.New):
-		m.form = newCreateForm(m.repoRoot)
+		m.form = newCreateForm(m.repoRoot, m.herdrMode)
 		m.state = viewCreate
 		return m, nil
 
@@ -339,13 +357,13 @@ func (m Model) handleReadonlyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if item, ok := m.issueList.SelectedItem().(issueItem); ok {
 				m.status = "checking out issue..."
 				m.statusErr = false
-				return m, checkoutIssueWorktreeCmd(m.repoRoot, m.worktrees, item.issue, herdr.Available())
+				return m, checkoutIssueWorktreeCmd(m.repoRoot, m.worktrees, item.issue, m.herdrMode, herdr.Available())
 			}
 		case tabPRs:
 			if item, ok := m.prList.SelectedItem().(prItem); ok {
 				m.status = "checking out PR..."
 				m.statusErr = false
-				return m, checkoutPRWorktreeCmd(m.repoRoot, m.worktrees, item.pr, herdr.Available())
+				return m, checkoutPRWorktreeCmd(m.repoRoot, m.worktrees, item.pr, m.herdrMode, herdr.Available())
 			}
 		}
 		return m, nil

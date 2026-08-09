@@ -66,14 +66,22 @@ type workspaceListResult struct {
 	} `json:"result"`
 }
 
-func focusedWorkspaceID() (string, error) {
+func listWorkspaces() (workspaceListResult, error) {
+	var res workspaceListResult
 	out, err := runOutput("workspace", "list")
 	if err != nil {
-		return "", err
+		return res, err
 	}
-	var res workspaceListResult
 	if err := json.Unmarshal(out, &res); err != nil {
-		return "", fmt.Errorf("parsing herdr workspace list output: %w", err)
+		return res, fmt.Errorf("parsing herdr workspace list output: %w", err)
+	}
+	return res, nil
+}
+
+func focusedWorkspaceID() (string, error) {
+	res, err := listWorkspaces()
+	if err != nil {
+		return "", err
 	}
 	for _, w := range res.Result.Workspaces {
 		if w.Focused {
@@ -81,6 +89,22 @@ func focusedWorkspaceID() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("no focused herdr workspace found")
+}
+
+// WorkspaceLabels returns the current live display label for every open
+// herdr workspace, keyed by workspace ID. Unlike the "label" field on
+// `herdr worktree list` entries (which is a static default that does not
+// track renames), this always reflects the workspace's current name.
+func WorkspaceLabels() (map[string]string, error) {
+	res, err := listWorkspaces()
+	if err != nil {
+		return nil, err
+	}
+	labels := make(map[string]string, len(res.Result.Workspaces))
+	for _, w := range res.Result.Workspaces {
+		labels[w.WorkspaceID] = w.Label
+	}
+	return labels, nil
 }
 
 // Worktree is one entry from `herdr worktree list --cwd`.

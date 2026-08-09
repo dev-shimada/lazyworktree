@@ -17,7 +17,8 @@ const (
 // createForm collects a branch name and a destination path for a new worktree,
 // plus an option to hand the new checkout off to herdr as a pane.
 type createForm struct {
-	repoRoot string
+	repoRoot  string
+	herdrMode bool
 
 	branch textinput.Model
 	path   textinput.Model
@@ -29,7 +30,7 @@ type createForm struct {
 	err            string
 }
 
-func newCreateForm(repoRoot string) createForm {
+func newCreateForm(repoRoot string, herdrMode bool) createForm {
 	branch := textinput.New()
 	branch.Placeholder = "branch name (existing or new)"
 	branch.Focus()
@@ -44,12 +45,20 @@ func newCreateForm(repoRoot string) createForm {
 	available := herdr.Available()
 	return createForm{
 		repoRoot:       repoRoot,
+		herdrMode:      herdrMode,
 		branch:         branch,
 		path:           path,
 		focus:          fieldBranch,
 		openHerdr:      available,
 		herdrAvailable: available,
 	}
+}
+
+func (f createForm) defaultWorktreePath(branch string) string {
+	if f.herdrMode {
+		return herdr.DefaultWorktreePath(f.repoRoot, branch)
+	}
+	return git.DefaultWorktreePath(f.repoRoot, branch)
 }
 
 func (f *createForm) syncFocus() {
@@ -99,7 +108,7 @@ func (f createForm) Update(msg tea.Msg) (createForm, tea.Cmd) {
 			if branch == "" {
 				f.path.SetValue("")
 			} else {
-				f.path.SetValue(git.DefaultWorktreePath(f.repoRoot, branch))
+				f.path.SetValue(f.defaultWorktreePath(branch))
 			}
 		}
 	case fieldPath:
