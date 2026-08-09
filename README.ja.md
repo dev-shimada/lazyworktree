@@ -52,6 +52,7 @@ lazyworktree
 | `R` | rename（挙動は起動モードによる。下記参照） | Worktrees |
 | `enter` / `o` | 選択中の issue / PR をブラウザで開く（`gh ... --web`） | Issues / Pull Requests |
 | `n` | 選択中の issue / PR を新規 worktree としてチェックアウト | Issues / Pull Requests |
+| `s` | 設定した issue リポジトリを順番に切り替え（下記参照） | Issues |
 
 Issues / Pull Requests タブの閲覧自体は `gh` CLI（既存の `gh auth login` 認証）を使った読み取り専用（GitHub 側に書き込みは一切しない）。`n` で worktree を作る操作だけはローカルに `git fetch` / `git worktree add` を行う（後述）。オープン中の worktree のブランチが、取得した PR の head ブランチと一致する場合、Worktrees タブ側に `[PR #123]` バッジが付く。
 
@@ -69,6 +70,18 @@ Issues / Pull Requests タブの閲覧自体は `gh` CLI（既存の `gh auth lo
 - **herdr のペイン内で起動時**: herdr 自身が使う場所と同じ `<herdr の worktrees.directory 設定>/<リポジトリ名>/<ブランチ名>`（デフォルトは `~/.herdr/worktrees/<repo>/<branch>`）。`~/.config/herdr/config.toml` の `[worktrees] directory` を変更していればそれに従う（herdr の CLI に設定値を問い合わせる手段が無いため、config.toml をこちらで直接読んで反映している）。
 
 Issues / Pull Requests タブの `n`（worktree 作成）でも同じ使い分けをする。
+
+### issue を別リポジトリで管理している場合
+
+コードとは別のリポジトリで issue を管理しているプロジェクト向け（複数のアプリリポジトリで1つの spec/backlog リポジトリを共有している場合など）に、`~/.config/lazyworktree/config.toml` で設定できる:
+
+```toml
+[[issues_repo]]
+match = "myorg/*"
+repos = ["myorg/specs"]
+```
+
+`match` は現在のリポジトリの `owner/repo` に対するglobマッチ（`*` はスラッシュをまたがないので、`myorg/*` は `myorg` 配下の任意のリポジトリにマッチしてそれ以上ネストしない）。最初にマッチしたルールの `repos` が Issues タブの追加ソースになる — 今のリポジトリ自身の issue が隠れることはなく、常にアクセスできる。Issues タブで `s` を押すとソースを順番に切り替えられ、現在のソースはタブラベル（例: `Issues [myorg/specs]`）に表示される。`n`（issueからのworktree作成）は、issueがどのソースから来たものであっても、常に今 lazyworktree を実行しているリポジトリにブランチを作る。
 
 ### シェル連携（cd フック）
 

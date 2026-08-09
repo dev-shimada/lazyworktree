@@ -52,6 +52,7 @@ The screen has three tabs — Worktrees / Issues / Pull Requests — switched wi
 | `R` | Rename (behavior depends on how lazyworktree was launched — see below) | Worktrees |
 | `enter` / `o` | Open the selected issue / PR in the browser (`gh ... --web`) | Issues / Pull Requests |
 | `n` | Check out the selected issue / PR into a new worktree | Issues / Pull Requests |
+| `s` | Cycle through configured issue repos (see below) | Issues |
 
 Browsing the Issues / Pull Requests tabs is read-only, backed by the `gh` CLI (using your existing `gh auth login`) — nothing is ever written back to GitHub. The `n` action (below) does touch your local checkout: it runs `git fetch` / `git worktree add`. When an open PR's head branch matches a worktree's branch, that worktree gets a `[PR #123]` badge.
 
@@ -69,6 +70,18 @@ The default path used by `n` depends on how lazyworktree was launched (either pa
 - **Launched from inside a herdr pane**: the same location herdr itself would use — `<herdr's worktrees.directory>/<repo>/<branch>` (default `~/.herdr/worktrees/<repo>/<branch>`). If `[worktrees] directory` is customized in `~/.config/herdr/config.toml`, that's honored (lazyworktree reads the file directly, since herdr's CLI has no way to query the resolved setting).
 
 The `n` action on the Issues / Pull Requests tabs follows the same rule.
+
+### Tracking issues in a different repository
+
+Some projects track issues in a separate repo from the code (e.g. a shared spec/backlog repo used by several app repos). Configure this in `~/.config/lazyworktree/config.toml`:
+
+```toml
+[[issues_repo]]
+match = "myorg/*"
+repos = ["myorg/specs"]
+```
+
+`match` is a glob against the current repo's `owner/repo` (`*` doesn't cross `/`, so `myorg/*` matches any repo under `myorg` but nothing nested further). The first matching rule's `repos` become additional Issues-tab sources — the current repo's own issues stay available too, they're never hidden. Press `s` on the Issues tab to cycle through them; the active source is shown in the tab label (e.g. `Issues [myorg/specs]`). `n` (checking out an issue into a worktree) always creates the branch in the repo you're running lazyworktree in, regardless of which source the issue came from.
 
 ### Shell integration (cd hook)
 

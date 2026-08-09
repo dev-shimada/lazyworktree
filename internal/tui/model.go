@@ -45,11 +45,16 @@ type Model struct {
 	issueList    list.Model
 	prList       list.Model
 
-	worktrees    []git.Worktree
-	prs          []github.PullRequest
-	herdrLabels  map[string]string // worktree path -> live herdr workspace label
+	worktrees   []git.Worktree
+	prs         []github.PullRequest
+	herdrLabels map[string]string // worktree path -> live herdr workspace label
+
 	issuesLoaded bool
-	prsLoaded    bool
+	// issueSources[0] is always "" (the current repo); further entries are
+	// "owner/repo" alternates configured in ~/.config/lazyworktree/config.toml.
+	issueSources   []string
+	issueSourceIdx int
+	prsLoaded      bool
 
 	form    createForm
 	confirm confirmDelete
@@ -130,6 +135,15 @@ func (m *Model) rebuildWorktreeItems() {
 	m.worktreeList.SetItems(items)
 }
 
+// currentIssueSource returns the "owner/repo" the Issues tab is currently
+// backed by, or "" for the current repo (resolved via cwd).
+func (m Model) currentIssueSource() string {
+	if m.issueSourceIdx < len(m.issueSources) {
+		return m.issueSources[m.issueSourceIdx]
+	}
+	return ""
+}
+
 func (m *Model) currentListPtr() *list.Model {
 	switch m.activeTab {
 	case tabIssues:
@@ -163,6 +177,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case issuesLoadedMsg:
 		m.issuesLoaded = true
+		m.issueSources = msg.sources
+		m.issueSourceIdx = msg.sourceIdx
 		items := make([]list.Item, len(msg.issues))
 		for i, is := range msg.issues {
 			items[i] = issueItem{issue: is}
@@ -239,7 +255,7 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case tabIssues:
 			if !m.issuesLoaded {
 				m.status = "loading issues..."
-				return m, loadIssuesCmd(m.repoRoot)
+				return m, loadIssuesCmd(m.repoRoot, 0)
 			}
 		case tabPRs:
 			if !m.prsLoaded {
@@ -253,7 +269,7 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = ""
 		switch m.activeTab {
 		case tabIssues:
-			return m, loadIssuesCmd(m.repoRoot)
+			return m, loadIssuesCmd(m.repoRoot, m.issueSourceIdx)
 		case tabPRs:
 			return m, loadPRsCmd(m.repoRoot)
 		default:
@@ -339,7 +355,7 @@ func (m Model) handleReadonlyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if item, ok := m.issueList.SelectedItem().(issueItem); ok {
 				m.status = "opening in browser..."
 				m.statusErr = false
-				return m, openIssueBrowserCmd(m.repoRoot, item.issue.Number)
+				return m, openIssueBrowserCmd(m.repoRoot, m.currentIssueSource(), item.issue.Number)
 			}
 		case tabPRs:
 			if item, ok := m.prList.SelectedItem().(prItem); ok {
@@ -349,6 +365,18 @@ func (m Model) handleReadonlyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	}
+
+	if key.Matches(msg, listKeys.SwitchSource) && m.activeTab == tabIssues {
+		if len(m.issueSources) <= 1 {
+			m.status = "no additional issue repos configured"
+			m.statusErr = false
+			return m, nil
+		}
+		newIdx := (m.issueSourceIdx + 1) % len(m.issueSources)
+		m.status = "loading issues..."
+		m.statusErr = false
+		return m, loadIssuesCmd(m.repoRoot, newIdx)
 	}
 
 	if key.Matches(msg, listKeys.New) {
@@ -466,12 +494,21 @@ func (m Model) View() string {
 }
 
 func (m Model) listView() string {
+	issuesLabel := "Issues"
+	if len(m.issueSources) > 1 {
+		src := m.currentIssueSource()
+		if src == "" {
+			src = "this repo"
+		}
+		issuesLabel = fmt.Sprintf("Issues [%s]", src)
+	}
+
 	tabLabels := []struct {
 		tab   tab
 		label string
 	}{
 		{tabWorktrees, "Worktrees"},
-		{tabIssues, "Issues"},
+		{tabIssues, issuesLabel},
 		{tabPRs, "Pull Requests"},
 	}
 	tabBar := ""
@@ -496,7 +533,12 @@ func (m Model) listView() string {
 	switch m.activeTab {
 	case tabIssues:
 		body = m.issueList.View()
-		help = footerStyle.Render("enter/o: open in browser  •  n: checkout as worktree  •  tab: switch view  •  r: refresh  •  q: quit")
+		issuesHelp := "enter/o: open in browser  •  n: checkout as worktree"
+		if len(m.issueSources) > 1 {
+			issuesHelp += "  •  s: switch issue repo"
+		}
+		issuesHelp += "  •  tab: switch view  •  r: refresh  •  q: quit"
+		help = footerStyle.Render(issuesHelp)
 	case tabPRs:
 		body = m.prList.View()
 		help = footerStyle.Render("enter/o: open in browser  •  n: checkout as worktree  •  tab: switch view  •  r: refresh  •  q: quit")

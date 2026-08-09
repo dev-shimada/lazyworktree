@@ -66,13 +66,19 @@ func run(dir string, args ...string) ([]byte, error) {
 	return stdout.Bytes(), nil
 }
 
-// ListIssues returns open issues for the repository containing dir.
-func ListIssues(dir string) ([]Issue, error) {
-	out, err := run(dir, "issue", "list",
+// ListIssues returns open issues for the repository containing dir. If
+// repoOverride ("owner/repo") is non-empty, issues are read from that repo
+// instead — for projects that track issues in a separate repository.
+func ListIssues(dir, repoOverride string) ([]Issue, error) {
+	args := []string{"issue", "list",
 		"--state", "open",
 		"--json", "number,title,author,url,updatedAt,labels",
 		"--limit", fmt.Sprint(listLimit),
-	)
+	}
+	if repoOverride != "" {
+		args = append(args, "--repo", repoOverride)
+	}
+	out, err := run(dir, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -109,8 +115,13 @@ func parsePullRequests(data []byte) ([]PullRequest, error) {
 }
 
 // OpenIssueInBrowser opens the given issue number in the default web browser.
-func OpenIssueInBrowser(dir string, number int) error {
-	_, err := run(dir, "issue", "view", fmt.Sprint(number), "--web")
+// repoOverride works the same as in ListIssues.
+func OpenIssueInBrowser(dir, repoOverride string, number int) error {
+	args := []string{"issue", "view", fmt.Sprint(number), "--web"}
+	if repoOverride != "" {
+		args = append(args, "--repo", repoOverride)
+	}
+	_, err := run(dir, args...)
 	return err
 }
 
@@ -123,6 +134,15 @@ func OpenPRInBrowser(dir string, number int) error {
 // DefaultBranch returns the repository's default branch name (e.g. "main").
 func DefaultBranch(dir string) (string, error) {
 	out, err := run(dir, "repo", "view", "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// CurrentRepo returns the "owner/repo" identity of the repository at dir.
+func CurrentRepo(dir string) (string, error) {
+	out, err := run(dir, "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner")
 	if err != nil {
 		return "", err
 	}

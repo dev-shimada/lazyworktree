@@ -3,16 +3,17 @@ package tui
 import "github.com/charmbracelet/bubbles/key"
 
 type listKeyMap struct {
-	Select   key.Binding
-	New      key.Binding
-	Delete   key.Binding
-	Prune    key.Binding
-	Lock     key.Binding
-	Open     key.Binding
-	Rename   key.Binding
-	CycleTab key.Binding
-	Refresh  key.Binding
-	Quit     key.Binding
+	Select       key.Binding
+	New          key.Binding
+	Delete       key.Binding
+	Prune        key.Binding
+	Lock         key.Binding
+	Open         key.Binding
+	Rename       key.Binding
+	SwitchSource key.Binding
+	CycleTab     key.Binding
+	Refresh      key.Binding
+	Quit         key.Binding
 }
 
 var listKeys = listKeyMap{
@@ -43,6 +44,10 @@ var listKeys = listKeyMap{
 	Rename: key.NewBinding(
 		key.WithKeys("R"),
 		key.WithHelp("R", "rename"),
+	),
+	SwitchSource: key.NewBinding(
+		key.WithKeys("s"),
+		key.WithHelp("s", "switch issue repo"),
 	),
 	CycleTab: key.NewBinding(
 		key.WithKeys("tab"),

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dev-shimada/lazyworktree/internal/config"
 	"github.com/dev-shimada/lazyworktree/internal/git"
 	"github.com/dev-shimada/lazyworktree/internal/github"
 	"github.com/dev-shimada/lazyworktree/internal/herdr"
@@ -15,6 +16,11 @@ type worktreesLoadedMsg struct {
 
 type issuesLoadedMsg struct {
 	issues []github.Issue
+	// sources are the available issue repos: sources[0] is always "" (the
+	// current repo, resolved via cwd); any further entries are "owner/repo"
+	// alternates configured in ~/.config/lazyworktree/config.toml.
+	sources   []string
+	sourceIdx int
 }
 
 type prsLoadedMsg struct {
@@ -187,16 +193,33 @@ func renameHerdrWorkspaceCmd(label string) tea.Cmd {
 	}
 }
 
-func loadIssuesCmd(repoDir string) tea.Cmd {
+// loadIssuesCmd resolves the available issue sources for repoDir (the
+// current repo, always first, plus any configured alternates) and loads
+// issues from the source at sourceIdx (clamped if it's now out of range,
+// e.g. because the config changed since the last load).
+func loadIssuesCmd(repoDir string, sourceIdx int) tea.Cmd {
 	return func() tea.Msg {
 		if !github.Available() {
 			return errMsg{fmt.Errorf("gh CLI not found in PATH")}
 		}
-		issues, err := github.ListIssues(repoDir)
+
+		sources := []string{""}
+		if currentRepo, err := github.CurrentRepo(repoDir); err == nil {
+			for _, repo := range config.IssuesRepos(currentRepo) {
+				if repo != "" && repo != currentRepo {
+					sources = append(sources, repo)
+				}
+			}
+		}
+		if sourceIdx < 0 || sourceIdx >= len(sources) {
+			sourceIdx = 0
+		}
+
+		issues, err := github.ListIssues(repoDir, sources[sourceIdx])
 		if err != nil {
 			return errMsg{err}
 		}
-		return issuesLoadedMsg{issues: issues}
+		return issuesLoadedMsg{issues: issues, sources: sources, sourceIdx: sourceIdx}
 	}
 }
 
@@ -213,9 +236,9 @@ func loadPRsCmd(repoDir string) tea.Cmd {
 	}
 }
 
-func openIssueBrowserCmd(repoDir string, number int) tea.Cmd {
+func openIssueBrowserCmd(repoDir, repoOverride string, number int) tea.Cmd {
 	return func() tea.Msg {
-		if err := github.OpenIssueInBrowser(repoDir, number); err != nil {
+		if err := github.OpenIssueInBrowser(repoDir, repoOverride, number); err != nil {
 			return actionDoneMsg{err: err}
 		}
 		return actionDoneMsg{status: fmt.Sprintf("opened issue #%d in browser", number)}
