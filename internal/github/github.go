@@ -99,15 +99,20 @@ func parseIssues(data []byte) ([]Issue, error) {
 
 // ListPullRequests returns open pull requests for the repository containing
 // dir. If mine is true, only pull requests assigned to the authenticated
-// user are returned.
+// user or with their review requested are returned.
 func ListPullRequests(dir string, mine bool) ([]PullRequest, error) {
 	args := []string{"pr", "list",
-		"--state", "open",
 		"--json", "number,title,author,headRefName,url,isDraft,updatedAt",
 		"--limit", fmt.Sprint(listLimit),
 	}
 	if mine {
-		args = append(args, "--assignee", "@me")
+		// --assignee alone misses PRs where you're a requested reviewer but
+		// not the assignee, which is the common case; --search lets us
+		// combine both. is:open replaces --state open here since gh treats
+		// --search as its own query.
+		args = append(args, "--search", "is:open (assignee:@me OR review-requested:@me)")
+	} else {
+		args = append(args, "--state", "open")
 	}
 	out, err := run(dir, args...)
 	if err != nil {

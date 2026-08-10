@@ -57,7 +57,7 @@ lazyworktree
 | `a` | 「自分にアサイン」（デフォルト）⇔「全体」を切り替え | Issues / Pull Requests |
 | `s` | 設定した issue リポジトリを順番に切り替え（下記参照） | Issues |
 
-Issues / Pull Requests タブの閲覧自体は `gh` CLI（既存の `gh auth login` 認証）を使った読み取り専用（GitHub 側に書き込みは一切しない）。デフォルトでは自分にアサインされたものだけを表示し、`a` で全体表示に切り替えられる。`/` はタイトル・番号・author・（issueの場合）labelをファジー検索する。`n` で worktree を作る操作だけはローカルに `git fetch` / `git worktree add` を行う（後述）。オープン中の worktree のブランチが、取得した PR の head ブランチと一致する場合、Worktrees タブ側に `[PR #123]` バッジが付く。
+Issues / Pull Requests タブの閲覧自体は `gh` CLI（既存の `gh auth login` 認証）を使った読み取り専用（GitHub 側に書き込みは一切しない）。デフォルトは「自分のもの」（`a` で全体表示に切り替え）: issueは自分にアサインされたもの、PRは自分がassigneeまたはreview-requestedになっているもの。`/` はタイトル・番号・author・（issueの場合）labelをファジー検索する。`n` で worktree を作る操作だけはローカルに `git fetch` / `git worktree add` を行う（後述）。オープン中の worktree のブランチが、取得した PR の head ブランチと一致する場合、Worktrees タブ側に `[PR #123]` バッジが付く。
 
 ### issue / PR から worktree を作る（`n`）
 

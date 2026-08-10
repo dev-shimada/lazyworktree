@@ -57,7 +57,7 @@ The screen has three tabs — Worktrees / Issues / Pull Requests — switched wi
 | `a` | Toggle between "assigned to me" (default) and "all" | Issues / Pull Requests |
 | `s` | Cycle through configured issue repos (see below) | Issues |
 
-Browsing the Issues / Pull Requests tabs is read-only, backed by the `gh` CLI (using your existing `gh auth login`) — nothing is ever written back to GitHub. Both default to issues/PRs assigned to you (`a` toggles to everyone's); `/` fuzzy-searches title, number, author, and (for issues) labels. The `n` action (below) does touch your local checkout: it runs `git fetch` / `git worktree add`. When an open PR's head branch matches a worktree's branch, that worktree gets a `[PR #123]` badge.
+Browsing the Issues / Pull Requests tabs is read-only, backed by the `gh` CLI (using your existing `gh auth login`) — nothing is ever written back to GitHub. Both default to "mine" (`a` toggles to everyone's): issues assigned to you, and PRs where you're either the assignee or a requested reviewer. `/` fuzzy-searches title, number, author, and (for issues) labels. The `n` action (below) does touch your local checkout: it runs `git fetch` / `git worktree add`. When an open PR's head branch matches a worktree's branch, that worktree gets a `[PR #123]` badge.
 
 ### Creating a worktree from an issue / PR (`n`)
 
