@@ -34,6 +34,8 @@ Run it inside a git repository (any worktree):
 lazyworktree
 ```
 
+`lazyworktree --help` shows all flags. If you've wrapped it in the shell function below, make sure it forwards arguments — otherwise flags silently launch the TUI instead.
+
 The screen has three tabs — Worktrees / Issues / Pull Requests — switched with `tab`.
 
 | Key | Action | Tab |
@@ -91,11 +93,15 @@ repos = ["myorg/specs"]
 
 ### Shell integration (cd hook)
 
-Selecting a worktree with `enter` prints its path to stdout as a single line on exit. Wrap it in a shell function to also `cd`:
+Selecting a worktree with `enter` prints its path to stdout as a single line on exit. Wrap it in a shell function to also `cd`. Forward arguments through to the real binary — otherwise flags like `--default-config` or `--help` silently launch the interactive TUI instead:
 
 ```sh
 # e.g. in ~/.zshrc
 lazyworktree() {
+  if [ "$#" -gt 0 ]; then
+    command lazyworktree "$@"
+    return
+  fi
   local dir
   dir=$(command lazyworktree) && [ -n "$dir" ] && cd -- "$dir"
 }

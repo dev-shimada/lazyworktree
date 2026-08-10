@@ -34,6 +34,8 @@ git リポジトリ内（どの worktree でも可）で実行する。
 lazyworktree
 ```
 
+`lazyworktree --help` で全フラグを確認できる。下記のシェル関数でラップしている場合、引数をちゃんと転送する実装にしておくこと（転送しないとフラグを渡しても素のTUIが起動してしまう）。
+
 画面は Worktrees / Issues / Pull Requests の3タブ。`tab` で切り替える。
 
 | キー | 動作 | タブ |
@@ -92,11 +94,15 @@ repos = ["myorg/specs"]
 ### シェル連携（cd フック）
 
 `enter` で worktree を選択すると、終了後にそのパスを標準出力に 1 行だけ出力する。
-シェル関数でラップすると `cd` 込みで使える。
+シェル関数でラップすると `cd` 込みで使える。引数は必ず実体のバイナリへ転送すること — 転送しないと `--default-config` や `--help` を渡しても素の対話TUIが起動してしまう:
 
 ```sh
 # ~/.zshrc など
 lazyworktree() {
+  if [ "$#" -gt 0 ]; then
+    command lazyworktree "$@"
+    return
+  fi
   local dir
   dir=$(command lazyworktree) && [ -n "$dir" ] && cd -- "$dir"
 }
