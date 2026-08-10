@@ -45,9 +45,10 @@ type Model struct {
 	issueList    list.Model
 	prList       list.Model
 
-	worktrees   []git.Worktree
-	prs         []github.PullRequest
-	herdrLabels map[string]string // worktree path -> live herdr workspace label
+	worktrees      []git.Worktree
+	prs            []github.PullRequest
+	herdrLabels    map[string]string // worktree path -> live herdr workspace label
+	worktreeTitles map[string]string // worktree path -> GitHub title, for pr-N/issue-N branches
 
 	issuesLoaded bool
 	// issueSources holds any configured "owner/repo" alternates first, then
@@ -141,6 +142,9 @@ func (m *Model) rebuildWorktreeItems() {
 		if label, ok := m.herdrLabels[w.Path]; ok {
 			item.herdrLabel = label
 		}
+		if title, ok := m.worktreeTitles[w.Path]; ok {
+			item.ghTitle = title
+		}
 		items[i] = item
 	}
 	m.worktreeList.SetItems(items)
@@ -179,10 +183,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case worktreesLoadedMsg:
 		m.worktrees = msg.worktrees
 		m.rebuildWorktreeItems()
-		return m, nil
+		return m, loadWorktreeTitlesCmd(m.repoRoot, m.worktrees)
 
 	case herdrLabelsLoadedMsg:
 		m.herdrLabels = msg.labelByPath
+		m.rebuildWorktreeItems()
+		return m, nil
+
+	case worktreeTitlesLoadedMsg:
+		m.worktreeTitles = msg.titleByPath
 		m.rebuildWorktreeItems()
 		return m, nil
 

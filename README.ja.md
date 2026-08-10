@@ -64,6 +64,7 @@ Issues / Pull Requests タブの閲覧自体は `gh` CLI（既存の `gh auth lo
 - **Pull Requests タブ**: ブランチ名は `pr-<番号>` 固定。`refs/pull/<番号>/head:pr-<番号>` を直接 fetch してから worktree を作るので、fork から出された PR でも動く。同名ブランチの worktree が既にあればそれをそのまま使う（再 fetch はしない）。
 - **Issues タブ**: ブランチ名は `issue-<番号>` 固定。リポジトリのデフォルトブランチを fetch し、そこから新規ブランチを切って worktree を作る。
 - どちらも作成後、`herdr` が使えれば自動でそのペインを開く（既に開いていれば focus）。
+- `pr-<番号>`/`issue-<番号>` だけでは何のworktreeか分からないので、Worktrees タブではそのパターンに一致するブランチについて実際のGitHubタイトルを取得して表示する。
 
 ### 新規 worktree の作成先
 

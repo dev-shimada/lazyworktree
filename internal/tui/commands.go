@@ -2,6 +2,9 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
+	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dev-shimada/lazyworktree/internal/config"
@@ -31,6 +34,10 @@ type prsLoadedMsg struct {
 
 type herdrLabelsLoadedMsg struct {
 	labelByPath map[string]string
+}
+
+type worktreeTitlesLoadedMsg struct {
+	titleByPath map[string]string
 }
 
 type errMsg struct {
@@ -76,6 +83,58 @@ func loadHerdrLabelsCmd(repoRoot string) tea.Cmd {
 			}
 		}
 		return herdrLabelsLoadedMsg{labelByPath: labelByPath}
+	}
+}
+
+// branchRefPattern matches the "pr-<number>" / "issue-<number>" branch names
+// lazyworktree itself creates when checking out a PR or issue (see
+// checkoutPRWorktreeCmd / checkoutIssueWorktreeCmd) — these carry no hint of
+// what they're about beyond the number.
+var branchRefPattern = regexp.MustCompile(`^(pr|issue)-(\d+)$`)
+
+// loadWorktreeTitlesCmd resolves the GitHub title for every worktree whose
+// branch matches branchRefPattern, keyed by checkout path, so the Worktrees
+// tab can show more than a bare "pr-123". Fetched concurrently since each is
+// a separate `gh` call; failures for individual items are swallowed (title
+// display is a nice-to-have, not worth blocking or erroring the list over).
+func loadWorktreeTitlesCmd(repoRoot string, worktrees []git.Worktree) tea.Cmd {
+	return func() tea.Msg {
+		titleByPath := map[string]string{}
+		if !github.Available() {
+			return worktreeTitlesLoadedMsg{titleByPath: titleByPath}
+		}
+
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		for _, w := range worktrees {
+			m := branchRefPattern.FindStringSubmatch(w.Branch)
+			if m == nil {
+				continue
+			}
+			number, err := strconv.Atoi(m[2])
+			if err != nil {
+				continue
+			}
+			wg.Add(1)
+			go func(path, kind string, number int) {
+				defer wg.Done()
+				var title string
+				var err error
+				if kind == "pr" {
+					title, err = github.PRTitle(repoRoot, number)
+				} else {
+					title, err = github.IssueTitle(repoRoot, number)
+				}
+				if err != nil || title == "" {
+					return
+				}
+				mu.Lock()
+				titleByPath[path] = title
+				mu.Unlock()
+			}(w.Path, m[1], number)
+		}
+		wg.Wait()
+		return worktreeTitlesLoadedMsg{titleByPath: titleByPath}
 	}
 }
 

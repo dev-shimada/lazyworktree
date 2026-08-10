@@ -64,6 +64,7 @@ Browsing the Issues / Pull Requests tabs is read-only, backed by the `gh` CLI (u
 - **Pull Requests tab**: the branch is always named `pr-<number>`. It fetches `refs/pull/<number>/head:pr-<number>` directly, so this works for PRs from forks too. If a worktree for that branch already exists, it's reused (no re-fetch).
 - **Issues tab**: the branch is always named `issue-<number>`. It fetches the repository's default branch and creates the new branch from there.
 - Either way, if `herdr` is available, the new worktree is opened as a pane afterward (or focused, if already open).
+- Since `pr-<number>`/`issue-<number>` alone doesn't say what a worktree is about, the Worktrees tab fetches and shows the actual GitHub title next to any branch matching that pattern.
 
 ### Where new worktrees are created
 

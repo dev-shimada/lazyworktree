@@ -155,6 +155,24 @@ func DefaultBranch(dir string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// PRTitle returns the title of the given pull request number.
+func PRTitle(dir string, number int) (string, error) {
+	out, err := run(dir, "pr", "view", fmt.Sprint(number), "--json", "title", "--jq", ".title")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// IssueTitle returns the title of the given issue number.
+func IssueTitle(dir string, number int) (string, error) {
+	out, err := run(dir, "issue", "view", fmt.Sprint(number), "--json", "title", "--jq", ".title")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 // CurrentRepo returns the "owner/repo" identity of the repository at dir.
 func CurrentRepo(dir string) (string, error) {
 	out, err := run(dir, "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner")

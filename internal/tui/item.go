@@ -12,6 +12,7 @@ type worktreeItem struct {
 	wt         git.Worktree
 	pr         *github.PullRequest // matching open PR for wt.Branch, if any
 	herdrLabel string              // live herdr workspace label, when one is open for wt.Path
+	ghTitle    string              // GitHub PR/issue title, for pr-N/issue-N branches
 }
 
 func (i worktreeItem) Title() string {
@@ -26,6 +27,9 @@ func (i worktreeItem) Title() string {
 		name = i.herdrLabel
 	}
 	title := branchStyle.Render(name)
+	if i.ghTitle != "" {
+		title += "  " + i.ghTitle
+	}
 	if i.wt.Locked {
 		title += " " + lockedBadgeStyle.Render("[locked]")
 	}
@@ -54,7 +58,7 @@ func (i worktreeItem) Description() string {
 }
 
 func (i worktreeItem) FilterValue() string {
-	return i.wt.Branch + " " + i.wt.Path
+	return i.wt.Branch + " " + i.wt.Path + " " + i.ghTitle
 }
 
 type issueItem struct {
