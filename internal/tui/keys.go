@@ -11,6 +11,7 @@ type listKeyMap struct {
 	Open         key.Binding
 	Rename       key.Binding
 	SwitchSource key.Binding
+	ToggleMine   key.Binding
 	CycleTab     key.Binding
 	Refresh      key.Binding
 	Quit         key.Binding
@@ -48,6 +49,10 @@ var listKeys = listKeyMap{
 	SwitchSource: key.NewBinding(
 		key.WithKeys("s"),
 		key.WithHelp("s", "switch issue repo"),
+	),
+	ToggleMine: key.NewBinding(
+		key.WithKeys("a"),
+		key.WithHelp("a", "mine/all"),
 	),
 	CycleTab: key.NewBinding(
 		key.WithKeys("tab"),

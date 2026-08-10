@@ -28,6 +28,27 @@ func ListWorktrees(dir string) ([]Worktree, error) {
 	return parseWorktreePorcelain(out), nil
 }
 
+// MainWorktreeRoot returns the path of the repository's main worktree —
+// unlike RepoRoot, which returns whichever worktree currently contains dir,
+// this returns the same repo-anchored path no matter which of the repo's
+// worktrees dir is inside. `git worktree list` always lists the main
+// worktree first, regardless of cwd.
+//
+// Conventions that should be anchored to the repo itself rather than to
+// "whichever worktree happens to be current" (where new worktrees get
+// created, herdr's worktree open/create — which reject a linked worktree's
+// path outright) should use this instead of RepoRoot.
+func MainWorktreeRoot(dir string) (string, error) {
+	worktrees, err := ListWorktrees(dir)
+	if err != nil {
+		return "", err
+	}
+	if len(worktrees) == 0 {
+		return "", fmt.Errorf("git worktree list returned no worktrees")
+	}
+	return worktrees[0].Path, nil
+}
+
 func parseWorktreePorcelain(out string) []Worktree {
 	var worktrees []Worktree
 	var cur *Worktree

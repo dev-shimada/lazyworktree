@@ -68,8 +68,9 @@ func run(dir string, args ...string) ([]byte, error) {
 
 // ListIssues returns open issues for the repository containing dir. If
 // repoOverride ("owner/repo") is non-empty, issues are read from that repo
-// instead — for projects that track issues in a separate repository.
-func ListIssues(dir, repoOverride string) ([]Issue, error) {
+// instead — for projects that track issues in a separate repository. If
+// mine is true, only issues assigned to the authenticated user are returned.
+func ListIssues(dir, repoOverride string, mine bool) ([]Issue, error) {
 	args := []string{"issue", "list",
 		"--state", "open",
 		"--json", "number,title,author,url,updatedAt,labels",
@@ -77,6 +78,9 @@ func ListIssues(dir, repoOverride string) ([]Issue, error) {
 	}
 	if repoOverride != "" {
 		args = append(args, "--repo", repoOverride)
+	}
+	if mine {
+		args = append(args, "--assignee", "@me")
 	}
 	out, err := run(dir, args...)
 	if err != nil {
@@ -93,13 +97,19 @@ func parseIssues(data []byte) ([]Issue, error) {
 	return issues, nil
 }
 
-// ListPullRequests returns open pull requests for the repository containing dir.
-func ListPullRequests(dir string) ([]PullRequest, error) {
-	out, err := run(dir, "pr", "list",
+// ListPullRequests returns open pull requests for the repository containing
+// dir. If mine is true, only pull requests assigned to the authenticated
+// user are returned.
+func ListPullRequests(dir string, mine bool) ([]PullRequest, error) {
+	args := []string{"pr", "list",
 		"--state", "open",
 		"--json", "number,title,author,headRefName,url,isDraft,updatedAt",
 		"--limit", fmt.Sprint(listLimit),
-	)
+	}
+	if mine {
+		args = append(args, "--assignee", "@me")
+	}
+	out, err := run(dir, args...)
 	if err != nil {
 		return nil, err
 	}

@@ -7,7 +7,7 @@ git worktree を操作するための TUI ツール。Go + [Bubble Tea](https://
 ## Features
 
 - TUI で git worktree の一覧・作成・削除・lock/unlock・prune
-- GitHub の Issues / Pull Requests を閲覧専用で表示（`gh` CLI 経由）
+- GitHub の Issues / Pull Requests を閲覧専用で表示（`gh` CLI 経由）。ファジー検索対応、デフォルトは自分にアサインされたものだけ
 - issue / PR からそのまま新規 worktree をチェックアウト
 - [herdr](https://github.com/herdrdev/herdr) との連携（任意）: worktree を herdr のペインとして開く、herdr ワークスペースの現在のラベルで一覧表示する、herdr 内から起動した場合は herdr の設定通りの場所に worktree を作成する
 
@@ -41,7 +41,7 @@ lazyworktree
 | `↑`/`k`, `↓`/`j` | 選択移動 | 共通 |
 | `tab` | Worktrees / Issues / Pull Requests を切り替え | 共通 |
 | `r` | 現在のタブを再読み込み | 共通 |
-| `/` | 一覧をフィルタ | 共通 |
+| `/` | 一覧をファジーフィルタ | 共通 |
 | `q` / `ctrl+c` | 終了（何も選択しない） | 共通 |
 | `enter` | worktree を選択して終了（パスを stdout に出力） | Worktrees |
 | `n` | 新規 worktree を作成（既存/新規ブランチどちらも指定可） | Worktrees |
@@ -52,9 +52,10 @@ lazyworktree
 | `R` | rename（挙動は起動モードによる。下記参照） | Worktrees |
 | `enter` / `o` | 選択中の issue / PR をブラウザで開く（`gh ... --web`） | Issues / Pull Requests |
 | `n` | 選択中の issue / PR を新規 worktree としてチェックアウト | Issues / Pull Requests |
+| `a` | 「自分にアサイン」（デフォルト）⇔「全体」を切り替え | Issues / Pull Requests |
 | `s` | 設定した issue リポジトリを順番に切り替え（下記参照） | Issues |
 
-Issues / Pull Requests タブの閲覧自体は `gh` CLI（既存の `gh auth login` 認証）を使った読み取り専用（GitHub 側に書き込みは一切しない）。`n` で worktree を作る操作だけはローカルに `git fetch` / `git worktree add` を行う（後述）。オープン中の worktree のブランチが、取得した PR の head ブランチと一致する場合、Worktrees タブ側に `[PR #123]` バッジが付く。
+Issues / Pull Requests タブの閲覧自体は `gh` CLI（既存の `gh auth login` 認証）を使った読み取り専用（GitHub 側に書き込みは一切しない）。デフォルトでは自分にアサインされたものだけを表示し、`a` で全体表示に切り替えられる。`/` はタイトル・番号・author・（issueの場合）labelをファジー検索する。`n` で worktree を作る操作だけはローカルに `git fetch` / `git worktree add` を行う（後述）。オープン中の worktree のブランチが、取得した PR の head ブランチと一致する場合、Worktrees タブ側に `[PR #123]` バッジが付く。
 
 ### issue / PR から worktree を作る（`n`）
 
@@ -69,7 +70,7 @@ Issues / Pull Requests タブの閲覧自体は `gh` CLI（既存の `gh auth lo
 - **通常起動時**: リポジトリ直下の `.worktrees/<ブランチ名>`（ブランチ名の `/` はそのままネストしたディレクトリになる）。対象リポジトリの `.gitignore` に `.worktrees/` を追加しておくことを推奨する。
 - **herdr のペイン内で起動時**: herdr 自身が使う場所と同じ `<herdr の worktrees.directory 設定>/<リポジトリ名>/<ブランチ名>`（デフォルトは `~/.herdr/worktrees/<repo>/<branch>`）。`~/.config/herdr/config.toml` の `[worktrees] directory` を変更していればそれに従う（herdr の CLI に設定値を問い合わせる手段が無いため、config.toml をこちらで直接読んで反映している）。
 
-Issues / Pull Requests タブの `n`（worktree 作成）でも同じ使い分けをする。
+Issues / Pull Requests タブの `n`（worktree 作成）でも同じ使い分けをする。これらは全て、lazyworktree をどの worktree から起動したかに関わらず、リポジトリの**メイン worktree** を基準にする — linked worktree（サブworktree）の中から起動しても、新規 worktree のグルーピング先を誤らず、herdr でも正しく開ける（herdr の `worktree open`/`create` は linked worktree 自身のパスを渡すと拒否するため）。
 
 ### issue を別リポジトリで管理している場合
 
@@ -86,7 +87,7 @@ match = "myorg/*"
 repos = ["myorg/specs"]
 ```
 
-`match` は現在のリポジトリの `owner/repo` に対するglobマッチ（`*` はスラッシュをまたがないので、`myorg/*` は `myorg` 配下の任意のリポジトリにマッチしてそれ以上ネストしない）。最初にマッチしたルールの `repos` が Issues タブの追加ソースになる — 今のリポジトリ自身の issue が隠れることはなく、常にアクセスできる。Issues タブで `s` を押すとソースを順番に切り替えられ、現在のソースはタブラベル（例: `Issues [myorg/specs]`）に表示される。`n`（issueからのworktree作成）は、issueがどのソースから来たものであっても、常に今 lazyworktree を実行しているリポジトリにブランチを作る。
+`match` は現在のリポジトリの `owner/repo` に対するglobマッチ（`*` はスラッシュをまたがないので、`myorg/*` は `myorg` 配下の任意のリポジトリにマッチしてそれ以上ネストしない）。最初にマッチしたルールの `repos` が Issues タブの**デフォルト**ソースになり、今のリポジトリ自身の issue はその後（隠れることはなく、切り替えの最後）に表示される。Issues タブで `s` を押すとソースを順番に切り替えられ、現在のソースはタブラベル（例: `Issues [mine, myorg/specs]`）に表示される。`n`（issueからのworktree作成）は、issueがどのソースから来たものであっても、常に今 lazyworktree を実行しているリポジトリにブランチを作る。
 
 ### シェル連携（cd フック）
 

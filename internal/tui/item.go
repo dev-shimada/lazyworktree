@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/dev-shimada/lazyworktree/internal/git"
 	"github.com/dev-shimada/lazyworktree/internal/github"
@@ -72,8 +73,14 @@ func (i issueItem) Description() string {
 	return fmt.Sprintf("@%s  %s", i.issue.Author.Login, date)
 }
 
+// FilterValue includes the number, author, and labels alongside the title
+// so "/" (fuzzy) search can match on any of them, not just the title text.
 func (i issueItem) FilterValue() string {
-	return i.issue.Title
+	labels := make([]string, len(i.issue.Labels))
+	for j, l := range i.issue.Labels {
+		labels[j] = l.Name
+	}
+	return fmt.Sprintf("#%d %s %s %s", i.issue.Number, i.issue.Title, i.issue.Author.Login, strings.Join(labels, " "))
 }
 
 type prItem struct {
@@ -96,6 +103,8 @@ func (i prItem) Description() string {
 	return fmt.Sprintf("@%s  %s  %s", i.pr.Author.Login, i.pr.HeadRefName, date)
 }
 
+// FilterValue includes the number and author alongside the title and branch
+// so "/" (fuzzy) search can match on any of them, not just the title text.
 func (i prItem) FilterValue() string {
-	return i.pr.Title + " " + i.pr.HeadRefName
+	return fmt.Sprintf("#%d %s %s %s", i.pr.Number, i.pr.Title, i.pr.Author.Login, i.pr.HeadRefName)
 }

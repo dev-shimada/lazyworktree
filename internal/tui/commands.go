@@ -16,15 +16,17 @@ type worktreesLoadedMsg struct {
 
 type issuesLoadedMsg struct {
 	issues []github.Issue
-	// sources are the available issue repos: sources[0] is always "" (the
-	// current repo, resolved via cwd); any further entries are "owner/repo"
-	// alternates configured in ~/.config/lazyworktree/config.toml.
+	// sources are the available issue repos: any configured "owner/repo"
+	// alternates first, then "" (the current repo, resolved via cwd) last —
+	// always present, so it's reachable via 's' no matter what's configured.
 	sources   []string
 	sourceIdx int
+	mine      bool
 }
 
 type prsLoadedMsg struct {
-	prs []github.PullRequest
+	prs  []github.PullRequest
+	mine bool
 }
 
 type herdrLabelsLoadedMsg struct {
@@ -193,46 +195,60 @@ func renameHerdrWorkspaceCmd(label string) tea.Cmd {
 	}
 }
 
-// loadIssuesCmd resolves the available issue sources for repoDir (the
-// current repo, always first, plus any configured alternates) and loads
-// issues from the source at sourceIdx (clamped if it's now out of range,
-// e.g. because the config changed since the last load).
-func loadIssuesCmd(repoDir string, sourceIdx int) tea.Cmd {
+// loadIssuesCmd resolves the available issue sources for repoDir — any
+// configured alternates first, then the current repo (last, but always
+// present) — and loads issues from the source at sourceIdx (clamped if it's
+// now out of range, e.g. because the config changed since the last load).
+// So the default (index 0) is a configured issues_repo when one is set, and
+// the current repo otherwise; 's' cycles the rest, ending back at "own
+// repo" before wrapping. mine restricts to issues assigned to the
+// authenticated user.
+func loadIssuesCmd(repoDir string, sourceIdx int, mine bool) tea.Cmd {
 	return func() tea.Msg {
 		if !github.Available() {
 			return errMsg{fmt.Errorf("gh CLI not found in PATH")}
 		}
 
-		sources := []string{""}
+		var sources []string
 		if currentRepo, err := github.CurrentRepo(repoDir); err == nil {
 			for _, repo := range config.IssuesRepos(currentRepo) {
-				if repo != "" && repo != currentRepo {
+				if repo != "" && repo != currentRepo && !containsStr(sources, repo) {
 					sources = append(sources, repo)
 				}
 			}
 		}
+		sources = append(sources, "") // current repo: always present, always last
 		if sourceIdx < 0 || sourceIdx >= len(sources) {
 			sourceIdx = 0
 		}
 
-		issues, err := github.ListIssues(repoDir, sources[sourceIdx])
+		issues, err := github.ListIssues(repoDir, sources[sourceIdx], mine)
 		if err != nil {
 			return errMsg{err}
 		}
-		return issuesLoadedMsg{issues: issues, sources: sources, sourceIdx: sourceIdx}
+		return issuesLoadedMsg{issues: issues, sources: sources, sourceIdx: sourceIdx, mine: mine}
 	}
 }
 
-func loadPRsCmd(repoDir string) tea.Cmd {
+func containsStr(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+func loadPRsCmd(repoDir string, mine bool) tea.Cmd {
 	return func() tea.Msg {
 		if !github.Available() {
 			return errMsg{fmt.Errorf("gh CLI not found in PATH")}
 		}
-		prs, err := github.ListPullRequests(repoDir)
+		prs, err := github.ListPullRequests(repoDir, mine)
 		if err != nil {
 			return errMsg{err}
 		}
-		return prsLoadedMsg{prs: prs}
+		return prsLoadedMsg{prs: prs, mine: mine}
 	}
 }
 

@@ -7,7 +7,7 @@ A TUI for managing git worktrees. Built with Go and [Bubble Tea](https://github.
 ## Features
 
 - Browse, create, delete, lock/unlock, and prune git worktrees from a terminal UI
-- Read-only GitHub Issues / Pull Requests tabs (via the `gh` CLI)
+- Read-only GitHub Issues / Pull Requests tabs (via the `gh` CLI), fuzzy-searchable, defaulting to items assigned to you
 - Check out an issue or PR straight into a new worktree
 - Optional integration with [herdr](https://github.com/herdrdev/herdr): hand a worktree off to a herdr pane, list worktrees by their live herdr workspace label, and create new worktrees under herdr's configured directory when launched from inside herdr
 
@@ -41,7 +41,7 @@ The screen has three tabs — Worktrees / Issues / Pull Requests — switched wi
 | `↑`/`k`, `↓`/`j` | Move selection | all |
 | `tab` | Switch Worktrees / Issues / Pull Requests | all |
 | `r` | Reload the current tab | all |
-| `/` | Filter the list | all |
+| `/` | Fuzzy-filter the list | all |
 | `q` / `ctrl+c` | Quit without selecting | all |
 | `enter` | Select a worktree and exit (prints its path to stdout) | Worktrees |
 | `n` | Create a new worktree (existing or new branch) | Worktrees |
@@ -52,9 +52,10 @@ The screen has three tabs — Worktrees / Issues / Pull Requests — switched wi
 | `R` | Rename (behavior depends on how lazyworktree was launched — see below) | Worktrees |
 | `enter` / `o` | Open the selected issue / PR in the browser (`gh ... --web`) | Issues / Pull Requests |
 | `n` | Check out the selected issue / PR into a new worktree | Issues / Pull Requests |
+| `a` | Toggle between "assigned to me" (default) and "all" | Issues / Pull Requests |
 | `s` | Cycle through configured issue repos (see below) | Issues |
 
-Browsing the Issues / Pull Requests tabs is read-only, backed by the `gh` CLI (using your existing `gh auth login`) — nothing is ever written back to GitHub. The `n` action (below) does touch your local checkout: it runs `git fetch` / `git worktree add`. When an open PR's head branch matches a worktree's branch, that worktree gets a `[PR #123]` badge.
+Browsing the Issues / Pull Requests tabs is read-only, backed by the `gh` CLI (using your existing `gh auth login`) — nothing is ever written back to GitHub. Both default to issues/PRs assigned to you (`a` toggles to everyone's); `/` fuzzy-searches title, number, author, and (for issues) labels. The `n` action (below) does touch your local checkout: it runs `git fetch` / `git worktree add`. When an open PR's head branch matches a worktree's branch, that worktree gets a `[PR #123]` badge.
 
 ### Creating a worktree from an issue / PR (`n`)
 
@@ -69,7 +70,7 @@ The default path used by `n` depends on how lazyworktree was launched (either pa
 - **Standalone**: `.worktrees/<branch>` under the repository root (a branch containing `/` becomes nested directories). Add `.worktrees/` to the target repo's `.gitignore`.
 - **Launched from inside a herdr pane**: the same location herdr itself would use — `<herdr's worktrees.directory>/<repo>/<branch>` (default `~/.herdr/worktrees/<repo>/<branch>`). If `[worktrees] directory` is customized in `~/.config/herdr/config.toml`, that's honored (lazyworktree reads the file directly, since herdr's CLI has no way to query the resolved setting).
 
-The `n` action on the Issues / Pull Requests tabs follows the same rule.
+The `n` action on the Issues / Pull Requests tabs follows the same rule. All of this is anchored to the repo's **main** worktree, not whichever worktree you launched lazyworktree from — launching it from inside a linked worktree still groups new worktrees correctly and lets herdr open/create them (herdr's `worktree open`/`create` outright reject being pointed at a linked worktree's own path).
 
 ### Tracking issues in a different repository
 
@@ -86,7 +87,7 @@ match = "myorg/*"
 repos = ["myorg/specs"]
 ```
 
-`match` is a glob against the current repo's `owner/repo` (`*` doesn't cross `/`, so `myorg/*` matches any repo under `myorg` but nothing nested further). The first matching rule's `repos` become additional Issues-tab sources — the current repo's own issues stay available too, they're never hidden. Press `s` on the Issues tab to cycle through them; the active source is shown in the tab label (e.g. `Issues [myorg/specs]`). `n` (checking out an issue into a worktree) always creates the branch in the repo you're running lazyworktree in, regardless of which source the issue came from.
+`match` is a glob against the current repo's `owner/repo` (`*` doesn't cross `/`, so `myorg/*` matches any repo under `myorg` but nothing nested further). The first matching rule's `repos` become the default Issues-tab source(s), shown before the current repo's own issues — which stay available too, they're never hidden, just last in the cycle. Press `s` on the Issues tab to cycle through them; the active source is shown in the tab label (e.g. `Issues [mine, myorg/specs]`). `n` (checking out an issue into a worktree) always creates the branch in the repo you're running lazyworktree in, regardless of which source the issue came from.
 
 ### Shell integration (cd hook)
 

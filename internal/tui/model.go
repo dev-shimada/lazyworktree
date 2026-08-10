@@ -50,11 +50,13 @@ type Model struct {
 	herdrLabels map[string]string // worktree path -> live herdr workspace label
 
 	issuesLoaded bool
-	// issueSources[0] is always "" (the current repo); further entries are
-	// "owner/repo" alternates configured in ~/.config/lazyworktree/config.toml.
+	// issueSources holds any configured "owner/repo" alternates first, then
+	// "" (the current repo) last — always present, so it's always reachable.
 	issueSources   []string
 	issueSourceIdx int
+	issuesMine     bool // true: only issues assigned to the authenticated user
 	prsLoaded      bool
+	prsMine        bool // true: only PRs assigned to the authenticated user
 
 	form    createForm
 	confirm confirmDelete
@@ -81,6 +83,13 @@ func New(dir string) (Model, error) {
 	if err != nil {
 		return Model{}, fmt.Errorf("not inside a git repository: %w", err)
 	}
+	// Anchor to the main worktree, not whichever worktree dir happens to be
+	// inside: new-worktree path conventions and herdr's worktree open/create
+	// (which reject a linked worktree's own path outright) both need the
+	// repo's canonical root, not "wherever lazyworktree was launched from."
+	if mainRoot, err := git.MainWorktreeRoot(dir); err == nil && mainRoot != "" {
+		root = mainRoot
+	}
 
 	newList := func() list.Model {
 		l := list.New(nil, list.NewDefaultDelegate(), 0, 0)
@@ -99,6 +108,8 @@ func New(dir string) (Model, error) {
 		issueList:    newList(),
 		prList:       newList(),
 		herdrMode:    herdr.InHerdr(),
+		issuesMine:   true,
+		prsMine:      true,
 	}, nil
 }
 
@@ -179,6 +190,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.issuesLoaded = true
 		m.issueSources = msg.sources
 		m.issueSourceIdx = msg.sourceIdx
+		m.issuesMine = msg.mine
 		items := make([]list.Item, len(msg.issues))
 		for i, is := range msg.issues {
 			items[i] = issueItem{issue: is}
@@ -189,6 +201,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case prsLoadedMsg:
 		m.prsLoaded = true
+		m.prsMine = msg.mine
 		m.prs = msg.prs
 		items := make([]list.Item, len(msg.prs))
 		for i, p := range msg.prs {
@@ -255,12 +268,12 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case tabIssues:
 			if !m.issuesLoaded {
 				m.status = "loading issues..."
-				return m, loadIssuesCmd(m.repoRoot, 0)
+				return m, loadIssuesCmd(m.repoRoot, 0, m.issuesMine)
 			}
 		case tabPRs:
 			if !m.prsLoaded {
 				m.status = "loading pull requests..."
-				return m, loadPRsCmd(m.repoRoot)
+				return m, loadPRsCmd(m.repoRoot, m.prsMine)
 			}
 		}
 		return m, nil
@@ -269,9 +282,9 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = ""
 		switch m.activeTab {
 		case tabIssues:
-			return m, loadIssuesCmd(m.repoRoot, m.issueSourceIdx)
+			return m, loadIssuesCmd(m.repoRoot, m.issueSourceIdx, m.issuesMine)
 		case tabPRs:
-			return m, loadPRsCmd(m.repoRoot)
+			return m, loadPRsCmd(m.repoRoot, m.prsMine)
 		default:
 			return m, m.reloadWorktreesCmd()
 		}
@@ -376,7 +389,21 @@ func (m Model) handleReadonlyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		newIdx := (m.issueSourceIdx + 1) % len(m.issueSources)
 		m.status = "loading issues..."
 		m.statusErr = false
-		return m, loadIssuesCmd(m.repoRoot, newIdx)
+		return m, loadIssuesCmd(m.repoRoot, newIdx, m.issuesMine)
+	}
+
+	if key.Matches(msg, listKeys.ToggleMine) {
+		switch m.activeTab {
+		case tabIssues:
+			m.status = "loading issues..."
+			m.statusErr = false
+			return m, loadIssuesCmd(m.repoRoot, m.issueSourceIdx, !m.issuesMine)
+		case tabPRs:
+			m.status = "loading pull requests..."
+			m.statusErr = false
+			return m, loadPRsCmd(m.repoRoot, !m.prsMine)
+		}
+		return m, nil
 	}
 
 	if key.Matches(msg, listKeys.New) {
@@ -494,13 +521,22 @@ func (m Model) View() string {
 }
 
 func (m Model) listView() string {
-	issuesLabel := "Issues"
+	issueParts := []string{"all"}
+	if m.issuesMine {
+		issueParts = []string{"mine"}
+	}
 	if len(m.issueSources) > 1 {
 		src := m.currentIssueSource()
 		if src == "" {
 			src = "this repo"
 		}
-		issuesLabel = fmt.Sprintf("Issues [%s]", src)
+		issueParts = append(issueParts, src)
+	}
+	issuesLabel := fmt.Sprintf("Issues [%s]", strings.Join(issueParts, ", "))
+
+	prsLabel := "Pull Requests [all]"
+	if m.prsMine {
+		prsLabel = "Pull Requests [mine]"
 	}
 
 	tabLabels := []struct {
@@ -509,7 +545,7 @@ func (m Model) listView() string {
 	}{
 		{tabWorktrees, "Worktrees"},
 		{tabIssues, issuesLabel},
-		{tabPRs, "Pull Requests"},
+		{tabPRs, prsLabel},
 	}
 	tabBar := ""
 	for _, t := range tabLabels {
@@ -533,7 +569,7 @@ func (m Model) listView() string {
 	switch m.activeTab {
 	case tabIssues:
 		body = m.issueList.View()
-		issuesHelp := "enter/o: open in browser  •  n: checkout as worktree"
+		issuesHelp := "enter/o: open in browser  •  n: checkout as worktree  •  a: mine/all"
 		if len(m.issueSources) > 1 {
 			issuesHelp += "  •  s: switch issue repo"
 		}
@@ -541,7 +577,7 @@ func (m Model) listView() string {
 		help = footerStyle.Render(issuesHelp)
 	case tabPRs:
 		body = m.prList.View()
-		help = footerStyle.Render("enter/o: open in browser  •  n: checkout as worktree  •  tab: switch view  •  r: refresh  •  q: quit")
+		help = footerStyle.Render("enter/o: open in browser  •  n: checkout as worktree  •  a: mine/all  •  tab: switch view  •  r: refresh  •  q: quit")
 	default:
 		body = m.worktreeList.View()
 		help = footerStyle.Render("enter: select & cd  •  n: new  •  d: delete  •  l: lock  •  o: open in herdr  •  R: rename  •  p: prune  •  tab: switch view  •  r: refresh  •  q: quit")
