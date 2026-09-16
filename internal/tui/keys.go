@@ -63,7 +63,7 @@ var listKeys = listKeyMap{
 		key.WithHelp("r", "refresh"),
 	),
 	Quit: key.NewBinding(
-		key.WithKeys("q", "ctrl+c"),
-		key.WithHelp("q", "quit"),
+		key.WithKeys("q", "ctrl+c", "esc"),
+		key.WithHelp("q/esc", "quit"),
 	),
 }

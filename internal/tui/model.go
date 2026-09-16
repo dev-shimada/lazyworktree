@@ -371,7 +371,7 @@ func (m Model) handleWorktreeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleReadonlyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if key.Matches(msg, listKeys.Select) || key.Matches(msg, listKeys.Open) {
+	if key.Matches(msg, listKeys.Open) {
 		switch m.activeTab {
 		case tabIssues:
 			if item, ok := m.issueList.SelectedItem().(issueItem); ok {
@@ -415,7 +415,7 @@ func (m Model) handleReadonlyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if key.Matches(msg, listKeys.New) {
+	if key.Matches(msg, listKeys.Select) {
 		switch m.activeTab {
 		case tabIssues:
 			if item, ok := m.issueList.SelectedItem().(issueItem); ok {
@@ -578,18 +578,18 @@ func (m Model) listView() string {
 	switch m.activeTab {
 	case tabIssues:
 		body = m.issueList.View()
-		issuesHelp := "enter/o: open in browser  •  n: checkout as worktree  •  a: mine/all"
+		issuesHelp := "enter: checkout as worktree  •  o: open in browser  •  a: mine/all"
 		if len(m.issueSources) > 1 {
 			issuesHelp += "  •  s: switch issue repo"
 		}
-		issuesHelp += "  •  tab: switch view  •  r: refresh  •  q: quit"
+		issuesHelp += "  •  tab: switch view  •  r: refresh  •  q/esc: quit"
 		help = footerStyle.Render(issuesHelp)
 	case tabPRs:
 		body = m.prList.View()
-		help = footerStyle.Render("enter/o: open in browser  •  n: checkout as worktree  •  a: mine/all  •  tab: switch view  •  r: refresh  •  q: quit")
+		help = footerStyle.Render("enter: checkout as worktree  •  o: open in browser  •  a: mine/all  •  tab: switch view  •  r: refresh  •  q/esc: quit")
 	default:
 		body = m.worktreeList.View()
-		help = footerStyle.Render("enter: select & cd  •  n: new  •  d: delete  •  l: lock  •  o: open in herdr  •  R: rename  •  p: prune  •  tab: switch view  •  r: refresh  •  q: quit")
+		help = footerStyle.Render("enter: select & cd  •  n: new  •  d: delete  •  l: lock  •  o: open in herdr  •  R: rename  •  p: prune  •  tab: switch view  •  r: refresh  •  q/esc: quit")
 	}
 
 	return titleStyle.Render("lazyworktree") + "  " + tabBar + "\n" + body + "\n" + statusLine + "\n" + help
