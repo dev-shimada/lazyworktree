@@ -230,9 +230,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.status = msg.err.Error()
 			m.statusErr = true
-		} else {
-			m.status = msg.status
-			m.statusErr = false
+			return m, m.reloadWorktreesCmd()
+		}
+		m.status = msg.status
+		m.statusErr = false
+		if msg.quit {
+			if msg.cdPath != "" {
+				m.SelectedPath = msg.cdPath
+			}
+			m.quitting = true
+			return m, tea.Quit
 		}
 		return m, m.reloadWorktreesCmd()
 
@@ -331,18 +338,12 @@ func (m Model) handleWorktreeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, listKeys.Open):
-		item, ok := m.worktreeList.SelectedItem().(worktreeItem)
-		if !ok {
-			return m, nil
+		if item, ok := m.worktreeList.SelectedItem().(worktreeItem); ok {
+			m.SelectedPath = item.wt.Path
+			m.quitting = true
+			return m, tea.Quit
 		}
-		if !herdr.Available() {
-			m.status = "herdr not found in PATH"
-			m.statusErr = true
-			return m, nil
-		}
-		m.status = "opening in herdr..."
-		m.statusErr = false
-		return m, openInHerdrCmd(m.repoRoot, item.wt.Path)
+		return m, nil
 
 	case key.Matches(msg, listKeys.Rename):
 		if m.herdrMode {
@@ -357,12 +358,18 @@ func (m Model) handleWorktreeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, listKeys.Select):
-		if item, ok := m.worktreeList.SelectedItem().(worktreeItem); ok {
-			m.SelectedPath = item.wt.Path
-			m.quitting = true
-			return m, tea.Quit
+		item, ok := m.worktreeList.SelectedItem().(worktreeItem)
+		if !ok {
+			return m, nil
 		}
-		return m, nil
+		if !herdr.Available() {
+			m.status = "herdr not found in PATH"
+			m.statusErr = true
+			return m, nil
+		}
+		m.status = "opening in herdr..."
+		m.statusErr = false
+		return m, openInHerdrCmd(m.repoRoot, item.wt.Path)
 	}
 
 	var cmd tea.Cmd
@@ -589,7 +596,7 @@ func (m Model) listView() string {
 		help = footerStyle.Render("enter: checkout as worktree  •  o: open in browser  •  a: mine/all  •  tab: switch view  •  r: refresh  •  q/esc: quit")
 	default:
 		body = m.worktreeList.View()
-		help = footerStyle.Render("enter: select & cd  •  n: new  •  d: delete  •  l: lock  •  o: open in herdr  •  R: rename  •  p: prune  •  tab: switch view  •  r: refresh  •  q/esc: quit")
+		help = footerStyle.Render("enter: open in herdr  •  o: select & cd  •  n: new  •  d: delete  •  l: lock  •  R: rename  •  p: prune  •  tab: switch view  •  r: refresh  •  q/esc: quit")
 	}
 
 	return titleStyle.Render("lazyworktree") + "  " + tabBar + "\n" + body + "\n" + statusLine + "\n" + help

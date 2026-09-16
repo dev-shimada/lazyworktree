@@ -47,6 +47,14 @@ type errMsg struct {
 type actionDoneMsg struct {
 	status string
 	err    error
+	// quit, when true and err is nil, exits the program after showing status
+	// — used for actions that hand off control elsewhere (a new worktree to
+	// cd into, a herdr pane taking over), as opposed to in-app list actions
+	// like delete/lock/rename that the user stays around to keep using.
+	quit bool
+	// cdPath, when quit is set and non-empty, becomes Model.SelectedPath so
+	// the shell wrapper cds into it after exit.
+	cdPath string
 }
 
 func loadWorktreesCmd(repoDir string) tea.Cmd {
@@ -166,7 +174,7 @@ func addWorktreeCmd(repoDir, path string, opts git.AddOptions, openHerdr bool) t
 				status += ", " + s
 			}
 		}
-		return actionDoneMsg{status: status}
+		return actionDoneMsg{status: status, quit: true, cdPath: path}
 	}
 }
 
@@ -228,7 +236,7 @@ func openInHerdrCmd(repoRoot, path string) tea.Cmd {
 		if err != nil {
 			return actionDoneMsg{err: err}
 		}
-		return actionDoneMsg{status: status}
+		return actionDoneMsg{status: status, quit: true}
 	}
 }
 
@@ -376,7 +384,7 @@ func checkoutPRWorktreeCmd(repoRoot string, worktrees []git.Worktree, pr github.
 				status += ", " + s
 			}
 		}
-		return actionDoneMsg{status: status}
+		return actionDoneMsg{status: status, quit: true, cdPath: path}
 	}
 }
 
@@ -411,6 +419,6 @@ func checkoutIssueWorktreeCmd(repoRoot string, worktrees []git.Worktree, issue g
 				status += ", " + s
 			}
 		}
-		return actionDoneMsg{status: status}
+		return actionDoneMsg{status: status, quit: true, cdPath: path}
 	}
 }
