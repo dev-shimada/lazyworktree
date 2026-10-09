@@ -25,6 +25,9 @@ var (
 	prunableBadgeStyle = lipgloss.NewStyle().Foreground(colorError)
 	branchStyle        = lipgloss.NewStyle().Foreground(colorAccent)
 	prBadgeStyle       = lipgloss.NewStyle().Foreground(colorOk)
+	stateOpenStyle     = lipgloss.NewStyle().Foreground(colorOk)
+	stateMergedStyle   = lipgloss.NewStyle().Foreground(colorAccent)
+	stateClosedStyle   = lipgloss.NewStyle().Foreground(colorError)
 
 	activeTabStyle   = lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Padding(0, 1).Underline(true)
 	inactiveTabStyle = lipgloss.NewStyle().Foreground(colorMuted).Padding(0, 1)

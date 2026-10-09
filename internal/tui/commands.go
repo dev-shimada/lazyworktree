@@ -25,19 +25,21 @@ type issuesLoadedMsg struct {
 	sources   []string
 	sourceIdx int
 	mine      bool
+	query     string
 }
 
 type prsLoadedMsg struct {
-	prs  []github.PullRequest
-	mine bool
+	prs   []github.PullRequest
+	mine  bool
+	query string
 }
 
 type herdrLabelsLoadedMsg struct {
 	labelByPath map[string]string
 }
 
-type worktreeTitlesLoadedMsg struct {
-	titleByPath map[string]string
+type worktreeRefsLoadedMsg struct {
+	refByPath map[string]github.Ref
 }
 
 type errMsg struct {
@@ -100,20 +102,28 @@ func loadHerdrLabelsCmd(repoRoot string) tea.Cmd {
 // what they're about beyond the number.
 var branchRefPattern = regexp.MustCompile(`^(pr|issue)-(\d+)$`)
 
-// loadWorktreeTitlesCmd resolves the GitHub title for every worktree whose
-// branch matches branchRefPattern, keyed by checkout path, so the Worktrees
-// tab can show more than a bare "pr-123". Fetched concurrently since each is
-// a separate `gh` call; failures for individual items are swallowed (title
-// display is a nice-to-have, not worth blocking or erroring the list over).
-func loadWorktreeTitlesCmd(repoRoot string, worktrees []git.Worktree) tea.Cmd {
+// loadWorktreeRefsCmd resolves, for every worktree, the issue or PR its
+// branch tracks and that item's state (open / closed / merged), keyed by
+// checkout path. pr-N / issue-N branches are looked up by number, so they
+// resolve however old the item is; other branches are matched by name against
+// the most recent PRs in any state. Fetched concurrently since each lookup is
+// a separate `gh` call; failures are swallowed (this is display-only, not
+// worth blocking or erroring the list over).
+func loadWorktreeRefsCmd(repoRoot string, worktrees []git.Worktree) tea.Cmd {
 	return func() tea.Msg {
-		titleByPath := map[string]string{}
+		refByPath := map[string]github.Ref{}
 		if !github.Available() {
-			return worktreeTitlesLoadedMsg{titleByPath: titleByPath}
+			return worktreeRefsLoadedMsg{refByPath: refByPath}
 		}
 
 		var mu sync.Mutex
 		var wg sync.WaitGroup
+		var recent []github.PullRequest
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			recent, _ = github.ListRecentPullRequests(repoRoot)
+		}()
 		for _, w := range worktrees {
 			m := branchRefPattern.FindStringSubmatch(w.Branch)
 			if m == nil {
@@ -126,24 +136,53 @@ func loadWorktreeTitlesCmd(repoRoot string, worktrees []git.Worktree) tea.Cmd {
 			wg.Add(1)
 			go func(path, kind string, number int) {
 				defer wg.Done()
-				var title string
+				var ref github.Ref
 				var err error
 				if kind == "pr" {
-					title, err = github.PRTitle(repoRoot, number)
+					ref, err = github.PRRef(repoRoot, number)
 				} else {
-					title, err = github.IssueTitle(repoRoot, number)
+					ref, err = github.IssueRef(repoRoot, number)
 				}
-				if err != nil || title == "" {
+				if err != nil {
 					return
 				}
 				mu.Lock()
-				titleByPath[path] = title
+				refByPath[path] = ref
 				mu.Unlock()
 			}(w.Path, m[1], number)
 		}
 		wg.Wait()
-		return worktreeTitlesLoadedMsg{titleByPath: titleByPath}
+
+		for _, w := range worktrees {
+			if _, done := refByPath[w.Path]; done || w.Branch == "" {
+				continue
+			}
+			if pr, ok := prForBranch(recent, w.Branch); ok {
+				refByPath[w.Path] = github.Ref{Kind: "pr", Number: pr.Number, Title: pr.Title, State: pr.State, IsDraft: pr.IsDraft}
+			}
+		}
+		return worktreeRefsLoadedMsg{refByPath: refByPath}
 	}
+}
+
+// prForBranch picks the PR whose head is branch, preferring an open one
+// (a branch can be reused after its earlier PR was closed) and ignoring
+// fork PRs, whose head names are unrelated to local branches.
+func prForBranch(prs []github.PullRequest, branch string) (github.PullRequest, bool) {
+	var found github.PullRequest
+	ok := false
+	for _, pr := range prs {
+		if pr.HeadRefName != branch || pr.IsCrossRepository {
+			continue
+		}
+		if pr.State == "OPEN" {
+			return pr, true
+		}
+		if !ok {
+			found, ok = pr, true
+		}
+	}
+	return found, ok
 }
 
 // openOrFocusHerdr opens path as a herdr pane, focusing an already-open
@@ -262,6 +301,14 @@ func renameHerdrWorkspaceCmd(label string) tea.Cmd {
 	}
 }
 
+// recentClosedLimit caps how many closed items are appended after the open
+// ones in the default (non-search) list, so recently finished work stays
+// visible without crowding anything out.
+const recentClosedLimit = 20
+
+// searchLimit is how many open matches a server-side search returns.
+const searchLimit = 100
+
 // loadIssuesCmd resolves the available issue sources for repoDir — any
 // configured alternates first, then the current repo (last, but always
 // present) — and loads issues from the source at sourceIdx (clamped if it's
@@ -269,8 +316,9 @@ func renameHerdrWorkspaceCmd(label string) tea.Cmd {
 // So the default (index 0) is a configured issues_repo when one is set, and
 // the current repo otherwise; 's' cycles the rest, ending back at "own
 // repo" before wrapping. mine restricts to issues assigned to the
-// authenticated user.
-func loadIssuesCmd(repoDir string, sourceIdx int, mine bool) tea.Cmd {
+// authenticated user. A non-empty query is searched server-side across all
+// open issues; without one, recently closed issues follow the open ones.
+func loadIssuesCmd(repoDir string, sourceIdx int, mine bool, query string) tea.Cmd {
 	return func() tea.Msg {
 		if !github.Available() {
 			return errMsg{fmt.Errorf("gh CLI not found in PATH")}
@@ -288,12 +336,28 @@ func loadIssuesCmd(repoDir string, sourceIdx int, mine bool) tea.Cmd {
 		if sourceIdx < 0 || sourceIdx >= len(sources) {
 			sourceIdx = 0
 		}
+		source := sources[sourceIdx]
 
-		issues, err := github.ListIssues(repoDir, sources[sourceIdx], mine)
+		openOpts := github.ListOpts{Mine: mine, Query: query}
+		if query != "" {
+			openOpts.Limit = searchLimit
+		}
+		var closed []github.Issue
+		var wg sync.WaitGroup
+		if query == "" {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				closed, _ = github.ListIssues(repoDir, source, github.ListOpts{State: "closed", Mine: mine, Limit: recentClosedLimit})
+			}()
+		}
+		issues, err := github.ListIssues(repoDir, source, openOpts)
+		wg.Wait()
 		if err != nil {
 			return errMsg{err}
 		}
-		return issuesLoadedMsg{issues: issues, sources: sources, sourceIdx: sourceIdx, mine: mine}
+		issues = append(issues, closed...)
+		return issuesLoadedMsg{issues: issues, sources: sources, sourceIdx: sourceIdx, mine: mine, query: query}
 	}
 }
 
@@ -306,16 +370,57 @@ func containsStr(list []string, s string) bool {
 	return false
 }
 
-func loadPRsCmd(repoDir string, mine bool) tea.Cmd {
+// loadPRsCmd is the pull-request counterpart of loadIssuesCmd: a non-empty
+// query searches all open PRs server-side; otherwise recently closed and
+// merged PRs follow the open ones.
+func loadPRsCmd(repoDir string, mine bool, query string) tea.Cmd {
 	return func() tea.Msg {
 		if !github.Available() {
 			return errMsg{fmt.Errorf("gh CLI not found in PATH")}
 		}
-		prs, err := github.ListPullRequests(repoDir, mine)
+		openOpts := github.ListOpts{Mine: mine, Query: query}
+		if query != "" {
+			openOpts.Limit = searchLimit
+		}
+		var closed []github.PullRequest
+		var wg sync.WaitGroup
+		if query == "" {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				closed, _ = github.ListPullRequests(repoDir, github.ListOpts{State: "closed", Mine: mine, Limit: recentClosedLimit})
+			}()
+		}
+		prs, err := github.ListPullRequests(repoDir, openOpts)
+		wg.Wait()
 		if err != nil {
 			return errMsg{err}
 		}
-		return prsLoadedMsg{prs: prs, mine: mine}
+		prs = append(prs, closed...)
+		return prsLoadedMsg{prs: prs, mine: mine, query: query}
+	}
+}
+
+// openWorktreeBrowserCmd opens the issue or PR a worktree's branch tracks.
+// If no tracked item is known yet, it asks gh for the branch's PR directly.
+func openWorktreeBrowserCmd(repoRoot, branch string, ref *github.Ref) tea.Cmd {
+	return func() tea.Msg {
+		switch {
+		case ref != nil && ref.Kind == "issue":
+			if err := github.OpenIssueInBrowser(repoRoot, "", ref.Number); err != nil {
+				return actionDoneMsg{err: err}
+			}
+			return actionDoneMsg{status: fmt.Sprintf("opened issue #%d in browser", ref.Number)}
+		case ref != nil:
+			if err := github.OpenPRInBrowser(repoRoot, ref.Number); err != nil {
+				return actionDoneMsg{err: err}
+			}
+			return actionDoneMsg{status: fmt.Sprintf("opened PR #%d in browser", ref.Number)}
+		}
+		if err := github.OpenBranchPRInBrowser(repoRoot, branch); err != nil {
+			return actionDoneMsg{err: fmt.Errorf("no issue or PR found for branch %s: %w", branch, err)}
+		}
+		return actionDoneMsg{status: "opened PR for " + branch + " in browser"}
 	}
 }
 

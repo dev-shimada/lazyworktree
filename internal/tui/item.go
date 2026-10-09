@@ -4,15 +4,35 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/dev-shimada/lazyworktree/internal/git"
 	"github.com/dev-shimada/lazyworktree/internal/github"
 )
 
 type worktreeItem struct {
 	wt         git.Worktree
-	pr         *github.PullRequest // matching open PR for wt.Branch, if any
-	herdrLabel string              // live herdr workspace label, when one is open for wt.Path
-	ghTitle    string              // GitHub PR/issue title, for pr-N/issue-N branches
+	ref        *github.Ref // PR/issue tracked by wt.Branch, in any state
+	herdrLabel string      // live herdr workspace label, when one is open for wt.Path
+}
+
+// stateBadge renders "[open]" / "[closed]" / "[merged]" (plus draft) in a
+// color matching the state.
+func stateBadge(label, state string, draft bool) string {
+	var style lipgloss.Style
+	text := strings.ToLower(state)
+	switch state {
+	case "MERGED":
+		style = stateMergedStyle
+	case "CLOSED":
+		style = stateClosedStyle
+	default:
+		style = stateOpenStyle
+		text = "open"
+		if draft {
+			text = "draft"
+		}
+	}
+	return style.Render(fmt.Sprintf("[%s%s]", label, text))
 }
 
 func (i worktreeItem) Title() string {
@@ -27,8 +47,8 @@ func (i worktreeItem) Title() string {
 		name = i.herdrLabel
 	}
 	title := branchStyle.Render(name)
-	if i.ghTitle != "" {
-		title += "  " + i.ghTitle
+	if i.ref != nil && i.ref.Title != "" && branchRefPattern.MatchString(i.wt.Branch) {
+		title += "  " + i.ref.Title
 	}
 	if i.wt.Locked {
 		title += " " + lockedBadgeStyle.Render("[locked]")
@@ -36,12 +56,12 @@ func (i worktreeItem) Title() string {
 	if i.wt.Prunable {
 		title += " " + prunableBadgeStyle.Render("[prunable]")
 	}
-	if i.pr != nil {
-		badge := fmt.Sprintf("[PR #%d]", i.pr.Number)
-		if i.pr.IsDraft {
-			badge = fmt.Sprintf("[PR #%d draft]", i.pr.Number)
+	if i.ref != nil {
+		label := "PR"
+		if i.ref.Kind == "issue" {
+			label = "issue"
 		}
-		title += " " + prBadgeStyle.Render(badge)
+		title += " " + stateBadge(fmt.Sprintf("%s #%d ", label, i.ref.Number), i.ref.State, i.ref.IsDraft)
 	}
 	return title
 }
@@ -58,7 +78,11 @@ func (i worktreeItem) Description() string {
 }
 
 func (i worktreeItem) FilterValue() string {
-	return i.wt.Branch + " " + i.wt.Path + " " + i.ghTitle
+	title := ""
+	if i.ref != nil {
+		title = i.ref.Title
+	}
+	return i.wt.Branch + " " + i.wt.Path + " " + title
 }
 
 type issueItem struct {
@@ -66,7 +90,11 @@ type issueItem struct {
 }
 
 func (i issueItem) Title() string {
-	return fmt.Sprintf("#%d %s", i.issue.Number, i.issue.Title)
+	title := fmt.Sprintf("#%d %s", i.issue.Number, i.issue.Title)
+	if i.issue.State != "" && i.issue.State != "OPEN" {
+		title += " " + stateBadge("", i.issue.State, false)
+	}
+	return title
 }
 
 func (i issueItem) Description() string {
@@ -93,7 +121,9 @@ type prItem struct {
 
 func (i prItem) Title() string {
 	title := fmt.Sprintf("#%d %s", i.pr.Number, i.pr.Title)
-	if i.pr.IsDraft {
+	if i.pr.State != "" && i.pr.State != "OPEN" {
+		title += " " + stateBadge("", i.pr.State, false)
+	} else if i.pr.IsDraft {
 		title += " " + lockedBadgeStyle.Render("[draft]")
 	}
 	return title

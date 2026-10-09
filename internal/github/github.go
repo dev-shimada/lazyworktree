@@ -35,6 +35,7 @@ type Issue struct {
 	URL       string  `json:"url"`
 	UpdatedAt string  `json:"updatedAt"`
 	Labels    []Label `json:"labels"`
+	State     string  `json:"state"` // OPEN or CLOSED
 }
 
 // PullRequest is a GitHub pull request, as reported by `gh pr list --json ...`.
@@ -46,6 +47,47 @@ type PullRequest struct {
 	URL         string `json:"url"`
 	IsDraft     bool   `json:"isDraft"`
 	UpdatedAt   string `json:"updatedAt"`
+	State       string `json:"state"` // OPEN, CLOSED, or MERGED
+	// IsCrossRepository is true for PRs opened from a fork, whose head branch
+	// name says nothing about any local branch of the same name.
+	IsCrossRepository bool `json:"isCrossRepository"`
+}
+
+// Ref describes the issue or pull request a worktree's branch tracks, in any
+// state (open, closed, merged).
+type Ref struct {
+	Kind    string // "pr" or "issue"
+	Number  int
+	Title   string
+	State   string // OPEN, CLOSED, or MERGED
+	IsDraft bool
+}
+
+// ListOpts narrows ListIssues / ListPullRequests.
+type ListOpts struct {
+	// State is "open" (default) or "closed" (for PRs this includes merged).
+	State string
+	// Mine restricts to items assigned to the authenticated user (for PRs,
+	// also those with their review requested).
+	Mine bool
+	// Query is a GitHub search expression applied server-side across every
+	// matching item, not just the first page.
+	Query string
+	Limit int
+}
+
+func (o ListOpts) state() string {
+	if o.State == "" {
+		return "open"
+	}
+	return o.State
+}
+
+func (o ListOpts) limit() int {
+	if o.Limit > 0 {
+		return o.Limit
+	}
+	return listLimit
 }
 
 const listLimit = 50
@@ -66,21 +108,23 @@ func run(dir string, args ...string) ([]byte, error) {
 	return stdout.Bytes(), nil
 }
 
-// ListIssues returns open issues for the repository containing dir. If
+// ListIssues returns issues for the repository containing dir. If
 // repoOverride ("owner/repo") is non-empty, issues are read from that repo
-// instead — for projects that track issues in a separate repository. If
-// mine is true, only issues assigned to the authenticated user are returned.
-func ListIssues(dir, repoOverride string, mine bool) ([]Issue, error) {
+// instead — for projects that track issues in a separate repository.
+func ListIssues(dir, repoOverride string, opts ListOpts) ([]Issue, error) {
 	args := []string{"issue", "list",
-		"--state", "open",
-		"--json", "number,title,author,url,updatedAt,labels",
-		"--limit", fmt.Sprint(listLimit),
+		"--state", opts.state(),
+		"--json", "number,title,author,url,updatedAt,labels,state",
+		"--limit", fmt.Sprint(opts.limit()),
 	}
 	if repoOverride != "" {
 		args = append(args, "--repo", repoOverride)
 	}
-	if mine {
+	if opts.Mine {
 		args = append(args, "--assignee", "@me")
+	}
+	if opts.Query != "" {
+		args = append(args, "--search", opts.Query)
 	}
 	out, err := run(dir, args...)
 	if err != nil {
@@ -97,24 +141,41 @@ func parseIssues(data []byte) ([]Issue, error) {
 	return issues, nil
 }
 
-// ListPullRequests returns open pull requests for the repository containing
-// dir. If mine is true, only pull requests assigned to the authenticated
-// user or with their review requested are returned.
-func ListPullRequests(dir string, mine bool) ([]PullRequest, error) {
+// ListPullRequests returns pull requests for the repository containing dir.
+func ListPullRequests(dir string, opts ListOpts) ([]PullRequest, error) {
 	args := []string{"pr", "list",
-		"--json", "number,title,author,headRefName,url,isDraft,updatedAt",
-		"--limit", fmt.Sprint(listLimit),
+		"--json", prListFields,
+		"--limit", fmt.Sprint(opts.limit()),
 	}
-	if mine {
+	if opts.Mine {
 		// --assignee alone misses PRs where you're a requested reviewer but
 		// not the assignee, which is the common case; --search lets us
-		// combine both. is:open replaces --state open here since gh treats
+		// combine both. is:<state> replaces --state here since gh treats
 		// --search as its own query.
-		args = append(args, "--search", "is:open (assignee:@me OR review-requested:@me)")
+		search := "is:" + opts.state() + " (assignee:@me OR review-requested:@me)"
+		if opts.Query != "" {
+			search = opts.Query + " " + search
+		}
+		args = append(args, "--search", search)
 	} else {
-		args = append(args, "--state", "open")
+		args = append(args, "--state", opts.state())
+		if opts.Query != "" {
+			args = append(args, "--search", opts.Query)
+		}
 	}
 	out, err := run(dir, args...)
+	if err != nil {
+		return nil, err
+	}
+	return parsePullRequests(out)
+}
+
+const prListFields = "number,title,author,headRefName,url,isDraft,updatedAt,state,isCrossRepository"
+
+// ListRecentPullRequests returns the most recent pull requests in any state,
+// for matching local branches to their PR once it has been closed or merged.
+func ListRecentPullRequests(dir string) ([]PullRequest, error) {
+	out, err := run(dir, "pr", "list", "--state", "all", "--json", prListFields, "--limit", "100")
 	if err != nil {
 		return nil, err
 	}
@@ -155,22 +216,44 @@ func DefaultBranch(dir string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// PRTitle returns the title of the given pull request number.
-func PRTitle(dir string, number int) (string, error) {
-	out, err := run(dir, "pr", "view", fmt.Sprint(number), "--json", "title", "--jq", ".title")
+// PRRef returns the title and state of the given pull request number.
+func PRRef(dir string, number int) (Ref, error) {
+	out, err := run(dir, "pr", "view", fmt.Sprint(number), "--json", "title,state,isDraft")
 	if err != nil {
-		return "", err
+		return Ref{}, err
 	}
-	return strings.TrimSpace(string(out)), nil
+	var v struct {
+		Title   string `json:"title"`
+		State   string `json:"state"`
+		IsDraft bool   `json:"isDraft"`
+	}
+	if err := json.Unmarshal(out, &v); err != nil {
+		return Ref{}, fmt.Errorf("parsing gh pr view output: %w", err)
+	}
+	return Ref{Kind: "pr", Number: number, Title: v.Title, State: v.State, IsDraft: v.IsDraft}, nil
 }
 
-// IssueTitle returns the title of the given issue number.
-func IssueTitle(dir string, number int) (string, error) {
-	out, err := run(dir, "issue", "view", fmt.Sprint(number), "--json", "title", "--jq", ".title")
+// IssueRef returns the title and state of the given issue number.
+func IssueRef(dir string, number int) (Ref, error) {
+	out, err := run(dir, "issue", "view", fmt.Sprint(number), "--json", "title,state")
 	if err != nil {
-		return "", err
+		return Ref{}, err
 	}
-	return strings.TrimSpace(string(out)), nil
+	var v struct {
+		Title string `json:"title"`
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal(out, &v); err != nil {
+		return Ref{}, fmt.Errorf("parsing gh issue view output: %w", err)
+	}
+	return Ref{Kind: "issue", Number: number, Title: v.Title, State: v.State}, nil
+}
+
+// OpenBranchPRInBrowser opens the pull request for the given branch name,
+// whatever its state, in the default web browser.
+func OpenBranchPRInBrowser(dir, branch string) error {
+	_, err := run(dir, "pr", "view", branch, "--web")
+	return err
 }
 
 // CurrentRepo returns the "owner/repo" identity of the repository at dir.

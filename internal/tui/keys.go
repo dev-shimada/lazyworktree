@@ -4,6 +4,8 @@ import "github.com/charmbracelet/bubbles/key"
 
 type listKeyMap struct {
 	Select       key.Binding
+	Cd           key.Binding
+	Search       key.Binding
 	New          key.Binding
 	Delete       key.Binding
 	Prune        key.Binding
@@ -20,7 +22,15 @@ type listKeyMap struct {
 var listKeys = listKeyMap{
 	Select: key.NewBinding(
 		key.WithKeys("enter"),
-		key.WithHelp("enter", "select & cd"),
+		key.WithHelp("enter", "primary action"),
+	),
+	Cd: key.NewBinding(
+		key.WithKeys("c"),
+		key.WithHelp("c", "select & cd"),
+	),
+	Search: key.NewBinding(
+		key.WithKeys("/"),
+		key.WithHelp("/", "search"),
 	),
 	New: key.NewBinding(
 		key.WithKeys("n"),
@@ -40,7 +50,7 @@ var listKeys = listKeyMap{
 	),
 	Open: key.NewBinding(
 		key.WithKeys("o"),
-		key.WithHelp("o", "open"),
+		key.WithHelp("o", "open in browser"),
 	),
 	Rename: key.NewBinding(
 		key.WithKeys("R"),
