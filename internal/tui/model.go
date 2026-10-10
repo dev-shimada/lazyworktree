@@ -62,8 +62,12 @@ type Model struct {
 	// issueQuery / prQuery are the active server-side searches ("" = none).
 	issueQuery string
 	prQuery    string
-	searching  bool
-	search     textinput.Model
+	// issueGen / prGen number the latest Issues / PRs load; responses from
+	// earlier loads (which can arrive out of order) are dropped.
+	issueGen  int
+	prGen     int
+	searching bool
+	search    textinput.Model
 
 	form    createForm
 	confirm confirmDelete
@@ -125,6 +129,17 @@ func New(dir string) (Model, error) {
 		issuesMine:   true,
 		prsMine:      true,
 	}, nil
+}
+
+// startIssuesLoad / startPRsLoad begin a new load and supersede any in flight.
+func (m *Model) startIssuesLoad(sourceIdx int, mine bool, query string) tea.Cmd {
+	m.issueGen++
+	return loadIssuesCmd(m.repoRoot, sourceIdx, mine, query, m.issueGen)
+}
+
+func (m *Model) startPRsLoad(mine bool, query string) tea.Cmd {
+	m.prGen++
+	return loadPRsCmd(m.repoRoot, mine, query, m.prGen)
 }
 
 func (m Model) Init() tea.Cmd {
@@ -202,6 +217,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case issuesLoadedMsg:
+		if msg.gen != m.issueGen {
+			return m, nil
+		}
 		m.issuesLoaded = true
 		m.issueSources = msg.sources
 		m.issueSourceIdx = msg.sourceIdx
@@ -216,6 +234,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case prsLoadedMsg:
+		if msg.gen != m.prGen {
+			return m, nil
+		}
 		m.prsLoaded = true
 		m.prsMine = msg.mine
 		m.prQuery = msg.query
@@ -228,6 +249,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case errMsg:
+		if (msg.tab == tabIssues && msg.gen != m.issueGen) || (msg.tab == tabPRs && msg.gen != m.prGen) {
+			return m, nil
+		}
 		m.status = msg.err.Error()
 		m.statusErr = true
 		return m, nil
@@ -284,10 +308,12 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch {
 		case m.activeTab == tabIssues && m.issueQuery != "":
 			m.status = "loading issues..."
-			return m, loadIssuesCmd(m.repoRoot, m.issueSourceIdx, m.issuesMine, "")
+			cmd := m.startIssuesLoad(m.issueSourceIdx, m.issuesMine, "")
+			return m, cmd
 		case m.activeTab == tabPRs && m.prQuery != "":
 			m.status = "loading pull requests..."
-			return m, loadPRsCmd(m.repoRoot, m.prsMine, "")
+			cmd := m.startPRsLoad(m.prsMine, "")
+			return m, cmd
 		}
 	}
 
@@ -304,12 +330,14 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case tabIssues:
 			if !m.issuesLoaded {
 				m.status = "loading issues..."
-				return m, loadIssuesCmd(m.repoRoot, 0, m.issuesMine, m.issueQuery)
+				cmd := m.startIssuesLoad(0, m.issuesMine, m.issueQuery)
+				return m, cmd
 			}
 		case tabPRs:
 			if !m.prsLoaded {
 				m.status = "loading pull requests..."
-				return m, loadPRsCmd(m.repoRoot, m.prsMine, m.prQuery)
+				cmd := m.startPRsLoad(m.prsMine, m.prQuery)
+				return m, cmd
 			}
 		}
 		return m, nil
@@ -318,9 +346,11 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = ""
 		switch m.activeTab {
 		case tabIssues:
-			return m, loadIssuesCmd(m.repoRoot, m.issueSourceIdx, m.issuesMine, m.issueQuery)
+			cmd := m.startIssuesLoad(m.issueSourceIdx, m.issuesMine, m.issueQuery)
+			return m, cmd
 		case tabPRs:
-			return m, loadPRsCmd(m.repoRoot, m.prsMine, m.prQuery)
+			cmd := m.startPRsLoad(m.prsMine, m.prQuery)
+			return m, cmd
 		default:
 			return m, m.reloadWorktreesCmd()
 		}
@@ -456,7 +486,8 @@ func (m Model) handleReadonlyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		newIdx := (m.issueSourceIdx + 1) % len(m.issueSources)
 		m.status = "loading issues..."
 		m.statusErr = false
-		return m, loadIssuesCmd(m.repoRoot, newIdx, m.issuesMine, m.issueQuery)
+		cmd := m.startIssuesLoad(newIdx, m.issuesMine, m.issueQuery)
+		return m, cmd
 	}
 
 	if key.Matches(msg, listKeys.ToggleMine) {
@@ -464,11 +495,13 @@ func (m Model) handleReadonlyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case tabIssues:
 			m.status = "loading issues..."
 			m.statusErr = false
-			return m, loadIssuesCmd(m.repoRoot, m.issueSourceIdx, !m.issuesMine, m.issueQuery)
+			cmd := m.startIssuesLoad(m.issueSourceIdx, !m.issuesMine, m.issueQuery)
+			return m, cmd
 		case tabPRs:
 			m.status = "loading pull requests..."
 			m.statusErr = false
-			return m, loadPRsCmd(m.repoRoot, !m.prsMine, m.prQuery)
+			cmd := m.startPRsLoad(!m.prsMine, m.prQuery)
+			return m, cmd
 		}
 		return m, nil
 	}
@@ -509,10 +542,12 @@ func (m Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch m.activeTab {
 		case tabIssues:
 			m.status = "searching issues..."
-			return m, loadIssuesCmd(m.repoRoot, m.issueSourceIdx, m.issuesMine, query)
+			cmd := m.startIssuesLoad(m.issueSourceIdx, m.issuesMine, query)
+			return m, cmd
 		case tabPRs:
 			m.status = "searching pull requests..."
-			return m, loadPRsCmd(m.repoRoot, m.prsMine, query)
+			cmd := m.startPRsLoad(m.prsMine, query)
+			return m, cmd
 		}
 		return m, nil
 	}

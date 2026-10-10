@@ -60,7 +60,7 @@ lazyworktree
 
 Issues / Pull Requests タブの閲覧自体は `gh` CLI（既存の `gh auth login` 認証）を使った読み取り専用（GitHub 側に書き込みは一切しない）。デフォルトは「自分のもの」（`a` で全体表示に切り替え）: issueは自分にアサインされたもの、PRは自分がassigneeまたはreview-requestedになっているもの。`/` は GitHub の検索構文（Web UI と同じ。例: `label:bug auth`）で、最初に読み込んだ分だけでなくオープンな**全件**を、現在の mine/all の範囲で検索する。空のクエリか `esc` で検索を解除できる。通常表示ではオープン分の後ろに、直近でクローズ（PR はマージ含む）された20件が `[closed]` / `[merged]` 付きで並ぶ。クローズ済みは検索対象外。`enter` で worktree を作る操作だけはローカルに `git fetch` / `git worktree add` を行う（後述）。
 
-Worktrees タブは各 worktree のブランチに紐づく issue / PR を状態に関わらず追跡する。`pr-N` / `issue-N` ブランチは番号で引き、それ以外のブランチは head ブランチ名が一致する直近の PR に対応づける（fork 由来の PR は除外）。`[PR #123 open]` / `[PR #123 merged]` / `[PR #123 closed]` / `[issue #45 closed]` のように色付きバッジで状態を表示する。
+Worktrees タブは各 worktree のブランチに紐づく issue / PR を状態に関わらず追跡する。`pr-N` / `issue-N` ブランチは番号で引き、それ以外のブランチは head ブランチ名が一致する PR（状態不問、open があればそれを優先、無ければ最新のもの）に対応づける（fork 由来の PR は除外）。`[PR #123 open]` / `[PR #123 merged]` / `[PR #123 closed]` / `[issue #45 closed]` のように色付きバッジで状態を表示する。
 
 ### issue / PR から worktree を作る（`enter`）
 

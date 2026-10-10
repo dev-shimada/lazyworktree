@@ -60,7 +60,7 @@ The screen has three tabs — Worktrees / Issues / Pull Requests — switched wi
 
 Browsing the Issues / Pull Requests tabs is read-only, backed by the `gh` CLI (using your existing `gh auth login`) — nothing is ever written back to GitHub. Both default to "mine" (`a` toggles to everyone's): issues assigned to you, and PRs where you're either the assignee or a requested reviewer. `/` runs a GitHub search (the same syntax as the web UI, e.g. `label:bug auth`) across **all** open items — not just the first page that was loaded — within the current mine/all scope; an empty query clears it, and `esc` also clears an active search. The default list shows open items followed by the 20 most recently closed ones (issues) or closed/merged ones (PRs), tagged `[closed]` / `[merged]`; closed items are not searched. The `enter` action (below) does touch your local checkout: it runs `git fetch` / `git worktree add`.
 
-The Worktrees tab tracks the issue or PR behind each worktree's branch whatever its state: `pr-N` / `issue-N` branches are looked up by number, and other branches are matched to the most recent PR with that head branch (fork PRs are ignored). Each gets a colored badge such as `[PR #123 open]`, `[PR #123 merged]`, `[PR #123 closed]` or `[issue #45 closed]`.
+The Worktrees tab tracks the issue or PR behind each worktree's branch whatever its state: `pr-N` / `issue-N` branches are looked up by number, and other branches are matched by head branch name against PRs in any state, preferring an open PR and otherwise the newest (fork PRs are ignored). Each gets a colored badge such as `[PR #123 open]`, `[PR #123 merged]`, `[PR #123 closed]` or `[issue #45 closed]`.
 
 ### Creating a worktree from an issue / PR (`enter`)
 

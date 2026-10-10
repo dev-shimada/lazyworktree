@@ -172,10 +172,12 @@ func ListPullRequests(dir string, opts ListOpts) ([]PullRequest, error) {
 
 const prListFields = "number,title,author,headRefName,url,isDraft,updatedAt,state,isCrossRepository"
 
-// ListRecentPullRequests returns the most recent pull requests in any state,
-// for matching local branches to their PR once it has been closed or merged.
-func ListRecentPullRequests(dir string) ([]PullRequest, error) {
-	out, err := run(dir, "pr", "list", "--state", "all", "--json", prListFields, "--limit", "100")
+// ListPullRequestsForBranch returns pull requests in any state whose head
+// branch is named branch, newest first, for matching a local branch to its
+// PR once it has been closed or merged. Queried per branch so a PR is found
+// however much unrelated activity the repository has had since.
+func ListPullRequestsForBranch(dir, branch string) ([]PullRequest, error) {
+	out, err := run(dir, "pr", "list", "--state", "all", "--head", branch, "--json", prListFields, "--limit", "20")
 	if err != nil {
 		return nil, err
 	}

@@ -26,12 +26,14 @@ type issuesLoadedMsg struct {
 	sourceIdx int
 	mine      bool
 	query     string
+	gen       int
 }
 
 type prsLoadedMsg struct {
 	prs   []github.PullRequest
 	mine  bool
 	query string
+	gen   int
 }
 
 type herdrLabelsLoadedMsg struct {
@@ -44,6 +46,11 @@ type worktreeRefsLoadedMsg struct {
 
 type errMsg struct {
 	err error
+	// tab and gen identify which Issues/PRs load this error belongs to, so a
+	// superseded load's error can be dropped; the zero tab (Worktrees) is
+	// never checked.
+	tab tab
+	gen int
 }
 
 type actionDoneMsg struct {
@@ -63,7 +70,7 @@ func loadWorktreesCmd(repoDir string) tea.Cmd {
 	return func() tea.Msg {
 		wts, err := git.ListWorktrees(repoDir)
 		if err != nil {
-			return errMsg{err}
+			return errMsg{err: err}
 		}
 		return worktreesLoadedMsg{worktrees: wts}
 	}
@@ -104,11 +111,11 @@ var branchRefPattern = regexp.MustCompile(`^(pr|issue)-(\d+)$`)
 
 // loadWorktreeRefsCmd resolves, for every worktree, the issue or PR its
 // branch tracks and that item's state (open / closed / merged), keyed by
-// checkout path. pr-N / issue-N branches are looked up by number, so they
-// resolve however old the item is; other branches are matched by name against
-// the most recent PRs in any state. Fetched concurrently since each lookup is
-// a separate `gh` call; failures are swallowed (this is display-only, not
-// worth blocking or erroring the list over).
+// checkout path. pr-N / issue-N branches are looked up by number; other
+// branches are matched by head branch name against PRs in any state. Each
+// lookup is a separate `gh` call, run concurrently (bounded); failures are
+// swallowed since this is display-only, not worth blocking or erroring the
+// list over.
 func loadWorktreeRefsCmd(repoRoot string, worktrees []git.Worktree) tea.Cmd {
 	return func() tea.Msg {
 		refByPath := map[string]github.Ref{}
@@ -118,51 +125,53 @@ func loadWorktreeRefsCmd(repoRoot string, worktrees []git.Worktree) tea.Cmd {
 
 		var mu sync.Mutex
 		var wg sync.WaitGroup
-		var recent []github.PullRequest
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			recent, _ = github.ListRecentPullRequests(repoRoot)
-		}()
+		sem := make(chan struct{}, 8)
 		for _, w := range worktrees {
-			m := branchRefPattern.FindStringSubmatch(w.Branch)
-			if m == nil {
-				continue
-			}
-			number, err := strconv.Atoi(m[2])
-			if err != nil {
+			if w.Branch == "" {
 				continue
 			}
 			wg.Add(1)
-			go func(path, kind string, number int) {
+			go func(path, branch string) {
 				defer wg.Done()
-				var ref github.Ref
-				var err error
-				if kind == "pr" {
-					ref, err = github.PRRef(repoRoot, number)
-				} else {
-					ref, err = github.IssueRef(repoRoot, number)
-				}
-				if err != nil {
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				ref, ok := lookupBranchRef(repoRoot, branch)
+				if !ok {
 					return
 				}
 				mu.Lock()
 				refByPath[path] = ref
 				mu.Unlock()
-			}(w.Path, m[1], number)
+			}(w.Path, w.Branch)
 		}
 		wg.Wait()
-
-		for _, w := range worktrees {
-			if _, done := refByPath[w.Path]; done || w.Branch == "" {
-				continue
-			}
-			if pr, ok := prForBranch(recent, w.Branch); ok {
-				refByPath[w.Path] = github.Ref{Kind: "pr", Number: pr.Number, Title: pr.Title, State: pr.State, IsDraft: pr.IsDraft}
-			}
-		}
 		return worktreeRefsLoadedMsg{refByPath: refByPath}
 	}
+}
+
+func lookupBranchRef(repoRoot, branch string) (github.Ref, bool) {
+	if m := branchRefPattern.FindStringSubmatch(branch); m != nil {
+		number, err := strconv.Atoi(m[2])
+		if err != nil {
+			return github.Ref{}, false
+		}
+		var ref github.Ref
+		if m[1] == "pr" {
+			ref, err = github.PRRef(repoRoot, number)
+		} else {
+			ref, err = github.IssueRef(repoRoot, number)
+		}
+		return ref, err == nil
+	}
+	prs, err := github.ListPullRequestsForBranch(repoRoot, branch)
+	if err != nil {
+		return github.Ref{}, false
+	}
+	pr, ok := prForBranch(prs, branch)
+	if !ok {
+		return github.Ref{}, false
+	}
+	return github.Ref{Kind: "pr", Number: pr.Number, Title: pr.Title, State: pr.State, IsDraft: pr.IsDraft}, true
 }
 
 // prForBranch picks the PR whose head is branch, preferring an open one
@@ -318,10 +327,10 @@ const searchLimit = 100
 // repo" before wrapping. mine restricts to issues assigned to the
 // authenticated user. A non-empty query is searched server-side across all
 // open issues; without one, recently closed issues follow the open ones.
-func loadIssuesCmd(repoDir string, sourceIdx int, mine bool, query string) tea.Cmd {
+func loadIssuesCmd(repoDir string, sourceIdx int, mine bool, query string, gen int) tea.Cmd {
 	return func() tea.Msg {
 		if !github.Available() {
-			return errMsg{fmt.Errorf("gh CLI not found in PATH")}
+			return errMsg{err: fmt.Errorf("gh CLI not found in PATH"), tab: tabIssues, gen: gen}
 		}
 
 		var sources []string
@@ -354,10 +363,10 @@ func loadIssuesCmd(repoDir string, sourceIdx int, mine bool, query string) tea.C
 		issues, err := github.ListIssues(repoDir, source, openOpts)
 		wg.Wait()
 		if err != nil {
-			return errMsg{err}
+			return errMsg{err: err, tab: tabIssues, gen: gen}
 		}
 		issues = append(issues, closed...)
-		return issuesLoadedMsg{issues: issues, sources: sources, sourceIdx: sourceIdx, mine: mine, query: query}
+		return issuesLoadedMsg{issues: issues, sources: sources, sourceIdx: sourceIdx, mine: mine, query: query, gen: gen}
 	}
 }
 
@@ -373,10 +382,10 @@ func containsStr(list []string, s string) bool {
 // loadPRsCmd is the pull-request counterpart of loadIssuesCmd: a non-empty
 // query searches all open PRs server-side; otherwise recently closed and
 // merged PRs follow the open ones.
-func loadPRsCmd(repoDir string, mine bool, query string) tea.Cmd {
+func loadPRsCmd(repoDir string, mine bool, query string, gen int) tea.Cmd {
 	return func() tea.Msg {
 		if !github.Available() {
-			return errMsg{fmt.Errorf("gh CLI not found in PATH")}
+			return errMsg{err: fmt.Errorf("gh CLI not found in PATH"), tab: tabPRs, gen: gen}
 		}
 		openOpts := github.ListOpts{Mine: mine, Query: query}
 		if query != "" {
@@ -394,10 +403,10 @@ func loadPRsCmd(repoDir string, mine bool, query string) tea.Cmd {
 		prs, err := github.ListPullRequests(repoDir, openOpts)
 		wg.Wait()
 		if err != nil {
-			return errMsg{err}
+			return errMsg{err: err, tab: tabPRs, gen: gen}
 		}
 		prs = append(prs, closed...)
-		return prsLoadedMsg{prs: prs, mine: mine, query: query}
+		return prsLoadedMsg{prs: prs, mine: mine, query: query, gen: gen}
 	}
 }
 
