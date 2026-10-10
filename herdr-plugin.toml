@@ -1,0 +1,20 @@
+id = "dev-shimada.lazyworktree"
+name = "lazyworktree"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "A TUI for managing git worktrees, as a herdr popup"
+platforms = ["macos", "linux"]
+
+[[actions]]
+id = "open"
+title = "Open lazyworktree"
+contexts = ["workspace"]
+command = ["sh", "herdr/open.sh"]
+
+[[panes]]
+id = "main"
+title = "lazyworktree"
+placement = "popup"
+width = "80%"
+height = "70%"
+command = ["sh", "herdr/launch.sh"]

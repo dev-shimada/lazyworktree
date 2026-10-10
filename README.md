@@ -140,6 +140,24 @@ width = "80%"
 height = "70%"
 ```
 
+### As a herdr plugin
+
+This repository is also a herdr plugin (`herdr-plugin.toml`). Install it, then bind a key to its `open` action:
+
+```sh
+herdr plugin install dev-shimada/lazyworktree
+```
+
+```toml
+[[keys.command]]
+key = "prefix+alt+w"
+type = "plugin_action"
+command = "dev-shimada.lazyworktree.open"
+description = "lazyworktree: manage git worktrees"
+```
+
+The popup starts in the focused pane's directory. It runs the `lazyworktree` found on `PATH`, so install the binary first (see Install).
+
 ## GitHub integration
 
 `internal/github` wraps the `gh` CLI (reusing your existing `gh auth login`) to show a read-only Issues / Pull Requests list. Writing back to GitHub — creating, commenting, merging — is out of scope. If `gh` isn't on PATH, selecting either tab just shows an error; nothing else is affected.

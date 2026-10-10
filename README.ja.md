@@ -141,6 +141,24 @@ width = "80%"
 height = "70%"
 ```
 
+### herdr plugin として使う
+
+このリポジトリは herdr plugin(`herdr-plugin.toml`)としても利用できます。インストール後、`open` アクションにキーを割り当ててください。
+
+```sh
+herdr plugin install dev-shimada/lazyworktree
+```
+
+```toml
+[[keys.command]]
+key = "prefix+alt+w"
+type = "plugin_action"
+command = "dev-shimada.lazyworktree.open"
+description = "lazyworktree: manage git worktrees"
+```
+
+popup はフォーカス中のペインのディレクトリで起動します。`PATH` 上の `lazyworktree` を実行するので、先に本体をインストールしてください(「Install」を参照)。
+
 ## GitHub 連携
 
 `internal/github` が `gh` CLI（既存の `gh auth login` 認証をそのまま利用）をラップし、Issues / Pull Requests タブに閲覧専用の一覧を表示する。作成・コメント・マージなどの書き込み操作は対象外。`gh` が PATH 上にない場合はタブ選択時にエラーメッセージを表示するだけで、他の機能には影響しない。
