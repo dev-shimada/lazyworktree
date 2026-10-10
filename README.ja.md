@@ -26,6 +26,24 @@ brew install lazyworktree
 go install github.com/dev-shimada/lazyworktree@latest
 ```
 
+### herdr plugin として使う
+
+このリポジトリは herdr plugin(`herdr-plugin.toml`)としても利用できます。インストール後、`open` アクションにキーを割り当ててください。
+
+```sh
+herdr plugin install dev-shimada/lazyworktree
+```
+
+```toml
+[[keys.command]]
+key = "prefix+alt+w"
+type = "plugin_action"
+command = "dev-shimada.lazyworktree.open"
+description = "lazyworktree: manage git worktrees"
+```
+
+popup はフォーカス中のペインのディレクトリで起動します。`PATH` 上の `lazyworktree` を実行するので、先に上記の Homebrew または Go で本体をインストールしてください。
+
 ## 使い方
 
 git リポジトリ内（どの worktree でも可）で実行する。
@@ -140,24 +158,6 @@ description = "lazyworktree: manage git worktrees"
 width = "80%"
 height = "70%"
 ```
-
-### herdr plugin として使う
-
-このリポジトリは herdr plugin(`herdr-plugin.toml`)としても利用できます。インストール後、`open` アクションにキーを割り当ててください。
-
-```sh
-herdr plugin install dev-shimada/lazyworktree
-```
-
-```toml
-[[keys.command]]
-key = "prefix+alt+w"
-type = "plugin_action"
-command = "dev-shimada.lazyworktree.open"
-description = "lazyworktree: manage git worktrees"
-```
-
-popup はフォーカス中のペインのディレクトリで起動します。`PATH` 上の `lazyworktree` を実行するので、先に本体をインストールしてください(「Install」を参照)。
 
 ## GitHub 連携
 
