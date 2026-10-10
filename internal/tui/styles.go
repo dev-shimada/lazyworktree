@@ -24,7 +24,6 @@ var (
 	lockedBadgeStyle   = lipgloss.NewStyle().Foreground(colorWarn)
 	prunableBadgeStyle = lipgloss.NewStyle().Foreground(colorError)
 	branchStyle        = lipgloss.NewStyle().Foreground(colorAccent)
-	prBadgeStyle       = lipgloss.NewStyle().Foreground(colorOk)
 	stateOpenStyle     = lipgloss.NewStyle().Foreground(colorOk)
 	stateMergedStyle   = lipgloss.NewStyle().Foreground(colorAccent)
 	stateClosedStyle   = lipgloss.NewStyle().Foreground(colorError)

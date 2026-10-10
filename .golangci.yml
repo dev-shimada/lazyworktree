@@ -1,0 +1,12 @@
+version: "2"
+linters:
+  enable:
+    - nilaway
+  settings:
+    custom:
+      nilaway:
+        type: module
+        description: Static analysis tool to detect potential nil panics in Go code.
+        settings:
+          # Skip dependencies; only report on this module's own code.
+          include-pkgs: github.com/dev-shimada/lazyworktree
