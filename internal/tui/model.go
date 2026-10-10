@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dev-shimada/lazyworktree/internal/git"
 	"github.com/dev-shimada/lazyworktree/internal/github"
@@ -45,10 +46,9 @@ type Model struct {
 	issueList    list.Model
 	prList       list.Model
 
-	worktrees      []git.Worktree
-	prs            []github.PullRequest
-	herdrLabels    map[string]string // worktree path -> live herdr workspace label
-	worktreeTitles map[string]string // worktree path -> GitHub title, for pr-N/issue-N branches
+	worktrees    []git.Worktree
+	herdrLabels  map[string]string     // worktree path -> live herdr workspace label
+	worktreeRefs map[string]github.Ref // worktree path -> tracked PR/issue, in any state
 
 	issuesLoaded bool
 	// issueSources holds any configured "owner/repo" alternates first, then
@@ -58,6 +58,16 @@ type Model struct {
 	issuesMine     bool // true: only issues assigned to the authenticated user
 	prsLoaded      bool
 	prsMine        bool // true: only PRs assigned to the authenticated user
+
+	// issueQuery / prQuery are the active server-side searches ("" = none).
+	issueQuery string
+	prQuery    string
+	// issueGen / prGen number the latest Issues / PRs load; responses from
+	// earlier loads (which can arrive out of order) are dropped.
+	issueGen  int
+	prGen     int
+	searching bool
+	search    textinput.Model
 
 	form    createForm
 	confirm confirmDelete
@@ -100,18 +110,36 @@ func New(dir string) (Model, error) {
 		l.DisableQuitKeybindings()
 		return l
 	}
+	// Issues/PRs are searched server-side (so matches aren't limited to the
+	// first page loaded); bubbles' local filter would only see that page.
+	newRemoteList := func() list.Model {
+		l := newList()
+		l.SetFilteringEnabled(false)
+		return l
+	}
 
 	return Model{
 		repoDir:      dir,
 		repoRoot:     root,
 		state:        viewList,
 		worktreeList: newList(),
-		issueList:    newList(),
-		prList:       newList(),
+		issueList:    newRemoteList(),
+		prList:       newRemoteList(),
 		herdrMode:    herdr.InHerdr(),
 		issuesMine:   true,
 		prsMine:      true,
 	}, nil
+}
+
+// startIssuesLoad / startPRsLoad begin a new load and supersede any in flight.
+func (m *Model) startIssuesLoad(sourceIdx int, mine bool, query string) tea.Cmd {
+	m.issueGen++
+	return loadIssuesCmd(m.repoRoot, sourceIdx, mine, query, m.issueGen)
+}
+
+func (m *Model) startPRsLoad(mine bool, query string) tea.Cmd {
+	m.prGen++
+	return loadPRsCmd(m.repoRoot, mine, query, m.prGen)
 }
 
 func (m Model) Init() tea.Cmd {
@@ -128,22 +156,15 @@ func (m Model) reloadWorktreesCmd() tea.Cmd {
 }
 
 func (m *Model) rebuildWorktreeItems() {
-	prByBranch := make(map[string]github.PullRequest, len(m.prs))
-	for _, pr := range m.prs {
-		prByBranch[pr.HeadRefName] = pr
-	}
 	items := make([]list.Item, len(m.worktrees))
 	for i, w := range m.worktrees {
 		item := worktreeItem{wt: w}
-		if pr, ok := prByBranch[w.Branch]; ok {
-			p := pr
-			item.pr = &p
+		if ref, ok := m.worktreeRefs[w.Path]; ok {
+			r := ref
+			item.ref = &r
 		}
 		if label, ok := m.herdrLabels[w.Path]; ok {
 			item.herdrLabel = label
-		}
-		if title, ok := m.worktreeTitles[w.Path]; ok {
-			item.ghTitle = title
 		}
 		items[i] = item
 	}
@@ -183,23 +204,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case worktreesLoadedMsg:
 		m.worktrees = msg.worktrees
 		m.rebuildWorktreeItems()
-		return m, loadWorktreeTitlesCmd(m.repoRoot, m.worktrees)
+		return m, loadWorktreeRefsCmd(m.repoRoot, m.worktrees)
 
 	case herdrLabelsLoadedMsg:
 		m.herdrLabels = msg.labelByPath
 		m.rebuildWorktreeItems()
 		return m, nil
 
-	case worktreeTitlesLoadedMsg:
-		m.worktreeTitles = msg.titleByPath
+	case worktreeRefsLoadedMsg:
+		m.worktreeRefs = msg.refByPath
 		m.rebuildWorktreeItems()
 		return m, nil
 
 	case issuesLoadedMsg:
+		if msg.gen != m.issueGen {
+			return m, nil
+		}
 		m.issuesLoaded = true
 		m.issueSources = msg.sources
 		m.issueSourceIdx = msg.sourceIdx
 		m.issuesMine = msg.mine
+		m.issueQuery = msg.query
 		items := make([]list.Item, len(msg.issues))
 		for i, is := range msg.issues {
 			items[i] = issueItem{issue: is}
@@ -209,19 +234,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case prsLoadedMsg:
+		if msg.gen != m.prGen {
+			return m, nil
+		}
 		m.prsLoaded = true
 		m.prsMine = msg.mine
-		m.prs = msg.prs
+		m.prQuery = msg.query
 		items := make([]list.Item, len(msg.prs))
 		for i, p := range msg.prs {
 			items[i] = prItem{pr: p}
 		}
 		m.prList.SetItems(items)
-		m.rebuildWorktreeItems()
 		m.status = ""
 		return m, nil
 
 	case errMsg:
+		if (msg.tab == tabIssues && msg.gen != m.issueGen) || (msg.tab == tabPRs && msg.gen != m.prGen) {
+			return m, nil
+		}
 		m.status = msg.err.Error()
 		m.statusErr = true
 		return m, nil
@@ -251,6 +281,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.searching {
+		return m.handleSearchKey(msg)
+	}
 	switch m.state {
 	case viewCreate:
 		return m.handleCreateKey(msg)
@@ -271,6 +304,19 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	if msg.String() == "esc" {
+		switch {
+		case m.activeTab == tabIssues && m.issueQuery != "":
+			m.status = "loading issues..."
+			cmd := m.startIssuesLoad(m.issueSourceIdx, m.issuesMine, "")
+			return m, cmd
+		case m.activeTab == tabPRs && m.prQuery != "":
+			m.status = "loading pull requests..."
+			cmd := m.startPRsLoad(m.prsMine, "")
+			return m, cmd
+		}
+	}
+
 	switch {
 	case key.Matches(msg, listKeys.Quit):
 		m.quitting = true
@@ -284,12 +330,14 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case tabIssues:
 			if !m.issuesLoaded {
 				m.status = "loading issues..."
-				return m, loadIssuesCmd(m.repoRoot, 0, m.issuesMine)
+				cmd := m.startIssuesLoad(0, m.issuesMine, m.issueQuery)
+				return m, cmd
 			}
 		case tabPRs:
 			if !m.prsLoaded {
 				m.status = "loading pull requests..."
-				return m, loadPRsCmd(m.repoRoot, m.prsMine)
+				cmd := m.startPRsLoad(m.prsMine, m.prQuery)
+				return m, cmd
 			}
 		}
 		return m, nil
@@ -298,9 +346,11 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = ""
 		switch m.activeTab {
 		case tabIssues:
-			return m, loadIssuesCmd(m.repoRoot, m.issueSourceIdx, m.issuesMine)
+			cmd := m.startIssuesLoad(m.issueSourceIdx, m.issuesMine, m.issueQuery)
+			return m, cmd
 		case tabPRs:
-			return m, loadPRsCmd(m.repoRoot, m.prsMine)
+			cmd := m.startPRsLoad(m.prsMine, m.prQuery)
+			return m, cmd
 		default:
 			return m, m.reloadWorktreesCmd()
 		}
@@ -338,6 +388,20 @@ func (m Model) handleWorktreeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, listKeys.Open):
+		item, ok := m.worktreeList.SelectedItem().(worktreeItem)
+		if !ok {
+			return m, nil
+		}
+		if item.wt.Branch == "" {
+			m.status = "no branch to look up on GitHub"
+			m.statusErr = true
+			return m, nil
+		}
+		m.status = "opening in browser..."
+		m.statusErr = false
+		return m, openWorktreeBrowserCmd(m.repoRoot, item.wt.Branch, item.ref)
+
+	case key.Matches(msg, listKeys.Cd):
 		if item, ok := m.worktreeList.SelectedItem().(worktreeItem); ok {
 			m.SelectedPath = item.wt.Path
 			m.quitting = true
@@ -396,6 +460,23 @@ func (m Model) handleReadonlyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if key.Matches(msg, listKeys.Search) {
+		m.search = textinput.New()
+		m.search.Prompt = "search: "
+		m.search.Placeholder = "GitHub search across all open items (empty = clear)"
+		m.search.CharLimit = 200
+		m.search.Width = 60
+		if m.activeTab == tabIssues {
+			m.search.SetValue(m.issueQuery)
+		} else {
+			m.search.SetValue(m.prQuery)
+		}
+		m.search.CursorEnd()
+		m.search.Focus()
+		m.searching = true
+		return m, textinput.Blink
+	}
+
 	if key.Matches(msg, listKeys.SwitchSource) && m.activeTab == tabIssues {
 		if len(m.issueSources) <= 1 {
 			m.status = "no additional issue repos configured"
@@ -405,7 +486,8 @@ func (m Model) handleReadonlyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		newIdx := (m.issueSourceIdx + 1) % len(m.issueSources)
 		m.status = "loading issues..."
 		m.statusErr = false
-		return m, loadIssuesCmd(m.repoRoot, newIdx, m.issuesMine)
+		cmd := m.startIssuesLoad(newIdx, m.issuesMine, m.issueQuery)
+		return m, cmd
 	}
 
 	if key.Matches(msg, listKeys.ToggleMine) {
@@ -413,11 +495,13 @@ func (m Model) handleReadonlyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case tabIssues:
 			m.status = "loading issues..."
 			m.statusErr = false
-			return m, loadIssuesCmd(m.repoRoot, m.issueSourceIdx, !m.issuesMine)
+			cmd := m.startIssuesLoad(m.issueSourceIdx, !m.issuesMine, m.issueQuery)
+			return m, cmd
 		case tabPRs:
 			m.status = "loading pull requests..."
 			m.statusErr = false
-			return m, loadPRsCmd(m.repoRoot, !m.prsMine)
+			cmd := m.startPRsLoad(!m.prsMine, m.prQuery)
+			return m, cmd
 		}
 		return m, nil
 	}
@@ -443,6 +527,32 @@ func (m Model) handleReadonlyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	cur := m.currentListPtr()
 	var cmd tea.Cmd
 	*cur, cmd = cur.Update(msg)
+	return m, cmd
+}
+
+func (m Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.searching = false
+		return m, nil
+	case "enter":
+		m.searching = false
+		query := strings.TrimSpace(m.search.Value())
+		m.statusErr = false
+		switch m.activeTab {
+		case tabIssues:
+			m.status = "searching issues..."
+			cmd := m.startIssuesLoad(m.issueSourceIdx, m.issuesMine, query)
+			return m, cmd
+		case tabPRs:
+			m.status = "searching pull requests..."
+			cmd := m.startPRsLoad(m.prsMine, query)
+			return m, cmd
+		}
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.search, cmd = m.search.Update(msg)
 	return m, cmd
 }
 
@@ -548,12 +658,19 @@ func (m Model) listView() string {
 		}
 		issueParts = append(issueParts, src)
 	}
+	if m.issueQuery != "" {
+		issueParts = append(issueParts, fmt.Sprintf("search: %q", m.issueQuery))
+	}
 	issuesLabel := fmt.Sprintf("Issues [%s]", strings.Join(issueParts, ", "))
 
-	prsLabel := "Pull Requests [all]"
+	prParts := []string{"all"}
 	if m.prsMine {
-		prsLabel = "Pull Requests [mine]"
+		prParts = []string{"mine"}
 	}
+	if m.prQuery != "" {
+		prParts = append(prParts, fmt.Sprintf("search: %q", m.prQuery))
+	}
+	prsLabel := fmt.Sprintf("Pull Requests [%s]", strings.Join(prParts, ", "))
 
 	tabLabels := []struct {
 		tab   tab
@@ -585,7 +702,7 @@ func (m Model) listView() string {
 	switch m.activeTab {
 	case tabIssues:
 		body = m.issueList.View()
-		issuesHelp := "enter: checkout as worktree  •  o: open in browser  •  a: mine/all"
+		issuesHelp := "enter: checkout as worktree  •  o: open in browser  •  /: search  •  a: mine/all"
 		if len(m.issueSources) > 1 {
 			issuesHelp += "  •  s: switch issue repo"
 		}
@@ -593,10 +710,14 @@ func (m Model) listView() string {
 		help = footerStyle.Render(issuesHelp)
 	case tabPRs:
 		body = m.prList.View()
-		help = footerStyle.Render("enter: checkout as worktree  •  o: open in browser  •  a: mine/all  •  tab: switch view  •  r: refresh  •  q/esc: quit")
+		help = footerStyle.Render("enter: checkout as worktree  •  o: open in browser  •  /: search  •  a: mine/all  •  tab: switch view  •  r: refresh  •  q/esc: quit")
 	default:
 		body = m.worktreeList.View()
-		help = footerStyle.Render("enter: open in herdr  •  o: select & cd  •  n: new  •  d: delete  •  l: lock  •  R: rename  •  p: prune  •  tab: switch view  •  r: refresh  •  q/esc: quit")
+		help = footerStyle.Render("enter: open in herdr  •  c: select & cd  •  o: open in browser  •  n: new  •  d: delete  •  l: lock  •  R: rename  •  p: prune  •  tab: switch view  •  r: refresh  •  q/esc: quit")
+	}
+
+	if m.searching {
+		help = footerStyle.Render(m.search.View() + "  •  enter: search  •  esc: cancel")
 	}
 
 	return titleStyle.Render("lazyworktree") + "  " + tabBar + "\n" + body + "\n" + statusLine + "\n" + help
