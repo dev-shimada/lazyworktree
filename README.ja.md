@@ -1,5 +1,17 @@
 # lazyworktree
 
+<p align="center">
+  <a href="https://github.com/dev-shimada/lazyworktree/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/dev-shimada/lazyworktree/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI"></a>
+  <a href="https://codecov.io/gh/dev-shimada/lazyworktree"><img alt="Coverage" src="https://codecov.io/gh/dev-shimada/lazyworktree/branch/main/graph/badge.svg?style=flat-square"></a>
+  <a href="https://github.com/dev-shimada/lazyworktree/blob/main/go.mod"><img alt="Go Version" src="https://img.shields.io/github/go-mod/go-version/dev-shimada/lazyworktree?style=flat-square&logo=go&logoColor=white"></a>
+  <a href="https://github.com/dev-shimada/lazyworktree/blob/main/LICENSE"><img alt="MIT License" src="https://img.shields.io/github/license/dev-shimada/lazyworktree?style=flat-square"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/dev-shimada/lazyworktree/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/dev-shimada/lazyworktree?style=flat-square&logo=github&logoColor=white"></a>
+  <a href="#install"><img alt="Homebrew" src="https://img.shields.io/badge/homebrew-dev--shimada%2Flazyworktree-FBB040?style=flat-square&logo=homebrew&logoColor=white"></a>
+</p>
+
 git worktree を操作するための TUI ツール。Go + [Bubble Tea](https://github.com/charmbracelet/bubbletea) 製。
 
 [English](README.md)
