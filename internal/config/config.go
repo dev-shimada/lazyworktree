@@ -139,7 +139,7 @@ func parseStringArray(s string) []string {
 		return nil
 	}
 	var result []string
-	for _, part := range strings.Split(s, ",") {
+	for part := range strings.SplitSeq(s, ",") {
 		part = strings.Trim(strings.TrimSpace(part), `"'`)
 		if part != "" {
 			result = append(result, part)

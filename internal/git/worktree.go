@@ -60,7 +60,7 @@ func parseWorktreePorcelain(out string) []Worktree {
 		}
 	}
 
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		line = strings.TrimRight(line, "\r")
 		if line == "" {
 			flush()
@@ -215,7 +215,7 @@ func ListBranches(dir string) ([]Branch, error) {
 
 	var branches []Branch
 	seen := make(map[string]bool)
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		switch {
 		case strings.HasPrefix(line, "refs/heads/"):
 			name := strings.TrimPrefix(line, "refs/heads/")
@@ -229,8 +229,8 @@ func ListBranches(dir string) ([]Branch, error) {
 				continue
 			}
 			short := name
-			if i := strings.Index(name, "/"); i >= 0 {
-				short = name[i+1:]
+			if _, after, ok := strings.Cut(name, "/"); ok {
+				short = after
 			}
 			if !checkedOut[short] && !seen[name] {
 				seen[name] = true

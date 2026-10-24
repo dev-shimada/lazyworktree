@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"sync"
 
@@ -354,11 +355,9 @@ func loadIssuesCmd(repoDir string, sourceIdx int, mine bool, query string, gen i
 		var closed []github.Issue
 		var wg sync.WaitGroup
 		if query == "" {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				closed, _ = github.ListIssues(repoDir, source, github.ListOpts{State: "closed", Mine: mine, Limit: recentClosedLimit})
-			}()
+			})
 		}
 		issues, err := github.ListIssues(repoDir, source, openOpts)
 		wg.Wait()
@@ -371,12 +370,7 @@ func loadIssuesCmd(repoDir string, sourceIdx int, mine bool, query string, gen i
 }
 
 func containsStr(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, s)
 }
 
 // loadPRsCmd is the pull-request counterpart of loadIssuesCmd: a non-empty
@@ -394,11 +388,9 @@ func loadPRsCmd(repoDir string, mine bool, query string, gen int) tea.Cmd {
 		var closed []github.PullRequest
 		var wg sync.WaitGroup
 		if query == "" {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				closed, _ = github.ListPullRequests(repoDir, github.ListOpts{State: "closed", Mine: mine, Limit: recentClosedLimit})
-			}()
+			})
 		}
 		prs, err := github.ListPullRequests(repoDir, openOpts)
 		wg.Wait()
