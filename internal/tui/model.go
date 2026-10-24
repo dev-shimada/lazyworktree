@@ -680,12 +680,12 @@ func (m Model) listView() string {
 		{tabIssues, issuesLabel},
 		{tabPRs, prsLabel},
 	}
-	tabBar := ""
+	var tabBar strings.Builder
 	for _, t := range tabLabels {
 		if t.tab == m.activeTab {
-			tabBar += activeTabStyle.Render(t.label)
+			tabBar.WriteString(activeTabStyle.Render(t.label))
 		} else {
-			tabBar += inactiveTabStyle.Render(t.label)
+			tabBar.WriteString(inactiveTabStyle.Render(t.label))
 		}
 	}
 
@@ -720,5 +720,5 @@ func (m Model) listView() string {
 		help = footerStyle.Render(m.search.View() + "  •  enter: search  •  esc: cancel")
 	}
 
-	return titleStyle.Render("lazyworktree") + "  " + tabBar + "\n" + body + "\n" + statusLine + "\n" + help
+	return titleStyle.Render("lazyworktree") + "  " + tabBar.String() + "\n" + body + "\n" + statusLine + "\n" + help
 }
